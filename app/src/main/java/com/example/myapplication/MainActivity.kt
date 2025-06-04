@@ -1,56 +1,83 @@
 package com.example.birthdayevents
 
-import android.app.DatePickerDialog
+import androidx.compose.foundation.isSystemInDarkTheme
+import android.app.*
 import android.content.Context
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cake
+import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.*
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationCompat
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.work.*
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.math.abs
-import kotlin.random.Random
+import java.util.concurrent.TimeUnit
 
+// DataStore
 val Context.dataStore by preferencesDataStore(name = "events")
 val EVENTS_KEY = stringPreferencesKey("events_json")
 val gson = Gson()
 
+// Event Data
 data class Event(
-    var name: String,
-    var date: Long, // store as millis
-    var isBirthday: Boolean,
-    var color: Int = ColorList.random().toArgb() // random color for each event
+    val name: String,
+    val date: Long,
+    val isBirthday: Boolean,
+    val color: Long,
+    val icon: String
 )
 
+// Icon mapping
+val iconMap = mapOf(
+    "Cake" to Icons.Default.Cake,
+    "Star" to Icons.Default.Star,
+    "Favorite" to Icons.Default.Favorite,
+    "Event" to Icons.Default.Event
+)
+val iconNames = iconMap.keys.toList()
+
+// Color options
+val colorOptions = listOf(
+    Color(0xFFFFF59D), Color(0xFFB2FF59), Color(0xFF81D4FA),
+    Color(0xFFFFAB91), Color(0xFFE1BEE7), Color(0xFFFFCDD2)
+)
+
+// Save/load events
 fun saveEvents(context: Context, events: List<Event>) {
     val json = gson.toJson(events)
     runBlocking {
@@ -59,7 +86,6 @@ fun saveEvents(context: Context, events: List<Event>) {
         }
     }
 }
-
 fun loadEvents(context: Context): List<Event> {
     return runBlocking {
         val prefs = context.dataStore.data.first()
@@ -69,199 +95,189 @@ fun loadEvents(context: Context): List<Event> {
     }
 }
 
-val ColorList = listOf(
-    Color(0xFFFFF59D), // yellow
-    Color(0xFFB2FF59), // green
-    Color(0xFF81D4FA), // blue
-    Color(0xFFFFAB91), // orange
-    Color(0xFFE1BEE7), // purple
-    Color(0xFFFFCDD2), // pink
-    Color(0xFFD7CCC8), // brown
-    Color(0xFFB0BEC5)  // gray
-)
-
-fun Color.toArgb(): Int = android.graphics.Color.argb(
-    (alpha * 255).toInt(),
-    (red * 255).toInt(),
-    (green * 255).toInt(),
-    (blue * 255).toInt()
-)
-
-fun Int.toComposeColor(): Color = Color(
-    android.graphics.Color.red(this),
-    android.graphics.Color.green(this),
-    android.graphics.Color.blue(this),
-    android.graphics.Color.alpha(this)
-)
-
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent {
-            BirthdayEventApp()
+// Notification Worker
+class EventNotificationWorker(
+    context: Context,
+    params: WorkerParameters
+) : Worker(context, params) {
+    override fun doWork(): Result {
+        val eventName = inputData.getString("event_name") ?: return Result.failure()
+        val context = applicationContext
+        val channelId = "event_channel"
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, "Events", NotificationManager.IMPORTANCE_HIGH)
+            notificationManager.createNotificationChannel(channel)
         }
+        val notification = NotificationCompat.Builder(context, channelId)
+            .setContentTitle("Event Reminder")
+            .setContentText("Don't forget: $eventName is tomorrow!")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .build()
+        notificationManager.notify(eventName.hashCode(), notification)
+        return Result.success()
+    }
+}
+fun scheduleEventNotification(context: Context, event: Event) {
+    val oneDayBefore = event.date - TimeUnit.DAYS.toMillis(1)
+    val delay = oneDayBefore - System.currentTimeMillis()
+    if (delay > 0) {
+        val work = OneTimeWorkRequestBuilder<EventNotificationWorker>()
+            .setInitialDelay(delay, TimeUnit.MILLISECONDS)
+            .setInputData(workDataOf("event_name" to event.name))
+            .build()
+        WorkManager.getInstance(context).enqueue(work)
     }
 }
 
+// Main Activity
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent { BirthdayEventTheme { BirthdayEventApp() } }
+    }
+}
+
+// Material3 Theme
+@Composable
+fun BirthdayEventTheme(content: @Composable () -> Unit) {
+    val darkTheme = isSystemInDarkTheme()
+    MaterialTheme(
+        colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme(),
+        typography = Typography(),
+        content = content
+    )
+}
+
+// Main App
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BirthdayEventApp() {
     val context = LocalContext.current
     var events by remember { mutableStateOf(loadEvents(context)) }
     var showDialog by remember { mutableStateOf(false) }
-    var editIndex by remember { mutableStateOf(-1) }
-    var showConfetti by remember { mutableStateOf(false) }
+    var editEvent by remember { mutableStateOf<Event?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
+    val snackbarHostState = remember { SnackbarHostState() }
+    var recentlyDeletedEvent by remember { mutableStateOf<Event?>(null) }
+    val scope = rememberCoroutineScope()
 
-    // Save events whenever they change
-    LaunchedEffect(events) {
-        saveEvents(context, events)
-    }
+    // Save events on change
+    LaunchedEffect(events) { saveEvents(context, events) }
 
-    // Show confetti for 2 seconds when a new event is added
-    LaunchedEffect(showConfetti) {
-        if (showConfetti) {
-            delay(2000)
-            showConfetti = false
-        }
-    }
+    // Filtered events
+    val filteredEvents = events.filter { it.name.contains(searchQuery, ignoreCase = true) }
 
-    Box(Modifier.fillMaxSize()) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(bottom = 70.dp)
-        ) {
-            itemsIndexed(events) { idx, event ->
-                EventCard(
-                    event = event,
-                    onEdit = {
-                        editIndex = idx
-                        showDialog = true
-                    },
-                    onMoveUp = {
-                        if (idx > 0) {
-                            val mutable = events.toMutableList()
-                            val temp = mutable[idx - 1]
-                            mutable[idx - 1] = mutable[idx]
-                            mutable[idx] = temp
-                            events = mutable
-                        }
-                    },
-                    onMoveDown = {
-                        if (idx < events.lastIndex) {
-                            val mutable = events.toMutableList()
-                            val temp = mutable[idx + 1]
-                            mutable[idx + 1] = mutable[idx]
-                            mutable[idx] = temp
-                            events = mutable
-                        }
-                    },
-                    isFirst = idx == 0,
-                    isLast = idx == events.lastIndex
-                )
-            }
-        }
-
-        // Confetti animation
-        AnimatedVisibility(
-            visible = showConfetti,
-            enter = fadeIn() + slideInVertically(),
-            exit = fadeOut() + slideOutVertically(),
-            modifier = Modifier.align(Alignment.TopCenter)
-        ) {
-            ConfettiRow()
-        }
-
-        Box(
-            Modifier
-                .align(Alignment.BottomStart)
-                .padding(20.dp)
-        ) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("ChronoEcho by Nathan the Best") }
+            )
+        },
+        floatingActionButton = {
             FloatingActionButton(onClick = {
-                editIndex = -1
+                editEvent = null
                 showDialog = true
             }) {
-                Text("+")
+                Icon(Icons.Default.Cake, contentDescription = "Add Event")
+            }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { padding ->
+        Column(Modifier.padding(padding)) {
+            SearchBar(query = searchQuery, onQueryChange = { searchQuery = it })
+            if (filteredEvents.isEmpty()) {
+                // Empty state
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.Cake, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(64.dp))
+                        Text("No events yet!", style = MaterialTheme.typography.titleLarge)
+                        Text("Tap + to add your first birthday or event.", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            } else {
+                LazyColumn {
+                    items(filteredEvents) { event ->
+                        EventCard(
+                            event = event,
+                            onEdit = {
+                                editEvent = event
+                                showDialog = true
+                            },
+                            onDelete = {
+                                events = events - event
+                                recentlyDeletedEvent = event
+                                scope.launch {
+                                    val result = snackbarHostState.showSnackbar(
+                                        message = "Event deleted",
+                                        actionLabel = "Undo"
+                                    )
+                                    if (result == SnackbarResult.ActionPerformed) {
+                                        events = events + recentlyDeletedEvent!!
+                                        recentlyDeletedEvent = null
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
             }
         }
-
         if (showDialog) {
-            val editingEvent = if (editIndex >= 0) events[editIndex] else null
             AddEditEventDialog(
-                initialEvent = editingEvent,
+                initialEvent = editEvent,
                 onDismiss = { showDialog = false },
                 onSave = { event ->
-                    events = if (editIndex >= 0) {
-                        events.toMutableList().apply { set(editIndex, event) }
+                    if (editEvent != null) {
+                        events = events.map { if (it == editEvent) event else it }
                     } else {
-                        events + event.copy(color = ColorList.random().toArgb())
+                        events = events + event
+                        scheduleEventNotification(context, event)
                     }
                     showDialog = false
-                    if (editIndex == -1) showConfetti = true
                 },
                 onDelete = {
-                    if (editIndex >= 0) {
-                        events = events.toMutableList().apply { removeAt(editIndex) }
+                    if (editEvent != null) {
+                        events = events - editEvent!!
+                        showDialog = false
                     }
-                    showDialog = false
                 }
             )
         }
     }
 }
 
+// Search Bar
 @Composable
-fun getLiveDetailedAge(eventTime: Long): String {
-    var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
-
-    // Update every second
-    LaunchedEffect(Unit) {
-        while (true) {
-            currentTime = System.currentTimeMillis()
-            delay(1000)
-        }
-    }
-
-    val diff = abs(currentTime - eventTime)
-    val years = diff / (1000L * 60 * 60* 24 * 365)
-    val days = diff / (1000L * 60 * 60 * 24) % 365
-    val hours = (diff / (1000L * 60 * 60)) % 24
-    val minutes = (diff / (1000L * 60)) % 60
-    val seconds = (diff / 1000) % 60
-
-    return "$years years, $days days"
+fun SearchBar(query: String, onQueryChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        label = { Text("Search events...") },
+        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp)
+    )
 }
 
-fun getLevel(days: Long): Int = when {
-    days < 7 -> 1
-    days < 30 -> 2
-    else -> 3
-}
-
+// Event Card
 @Composable
 fun EventCard(
     event: Event,
     onEdit: () -> Unit,
-    onMoveUp: () -> Unit,
-    onMoveDown: () -> Unit,
-    isFirst: Boolean,
-    isLast: Boolean,
-    modifier: Modifier = Modifier
+    onDelete: () -> Unit
 ) {
     val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
     val dateStr = sdf.format(Date(event.date))
-    val ageStr = getLiveDetailedAge(event.date)
-    val days = abs((System.currentTimeMillis() - event.date) / (1000L * 60 * 60 * 24))
-    val level = getLevel(days)
-    val icon = if (event.isBirthday) Icons.Default.Cake else Icons.Default.Star
-    val iconDesc = if (event.isBirthday) "Birthday" else "Event"
-    val cardColor = event.color.toComposeColor()
-
+    val icon = iconMap[event.icon] ?: Icons.Default.Cake
+    val cardColor = Color(event.color)
     Card(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .padding(8.dp)
-            .background(cardColor),
-        elevation = 8.dp,
+            .clickable { onEdit() },
+        colors = CardDefaults.cardColors(containerColor = cardColor),
         shape = RoundedCornerShape(16.dp)
     ) {
         Row(
@@ -270,45 +286,21 @@ fun EventCard(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(icon, contentDescription = iconDesc, tint = Color.Unspecified, modifier = Modifier.size(40.dp))
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp))
             Spacer(Modifier.width(12.dp))
-            Column(
-                Modifier
-                    .weight(1f)
-                    .clickable { onEdit() }
-            ) {
-                Text(
-                    text = event.name,
-                    style = MaterialTheme.typography.h6.copy(fontWeight = FontWeight.Bold)
-                )
-                Text(text = "Date: $dateStr")
-                if (event.isBirthday) {
-                    Text(text = "Age: $ageStr old")
-                } else {
-                    Text(text = "Since: $ageStr")
-                }
-                Text(
-                    text = "Level $level",
-                    color = when (level) {
-                        1 -> Color(0xFF43A047)
-                        2 -> Color(0xFF1976D2)
-                        else -> Color(0xFFFBC02D)
-                    },
-                    fontWeight = FontWeight.Bold
-                )
+            Column(Modifier.weight(1f)) {
+                Text(event.name, style = MaterialTheme.typography.titleMedium)
+                Text("Date: $dateStr", style = MaterialTheme.typography.bodyMedium)
+                Text(if (event.isBirthday) "Birthday" else "Event", style = MaterialTheme.typography.bodySmall)
             }
-            Column {
-                IconButton(onClick = onMoveUp, enabled = !isFirst) {
-                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move Up")
-                }
-                IconButton(onClick = onMoveDown, enabled = !isLast) {
-                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move Down")
-                }
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.Favorite, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
             }
         }
     }
 }
 
+// Add/Edit Event Dialog
 @Composable
 fun AddEditEventDialog(
     initialEvent: Event?,
@@ -319,6 +311,8 @@ fun AddEditEventDialog(
     var name by remember { mutableStateOf(TextFieldValue(initialEvent?.name ?: "")) }
     var isBirthday by remember { mutableStateOf(initialEvent?.isBirthday ?: true) }
     var dateMillis by remember { mutableStateOf(initialEvent?.date ?: System.currentTimeMillis()) }
+    var selectedColor by remember { mutableStateOf(initialEvent?.color?.let { Color(it) } ?: colorOptions.first()) }
+    var selectedIcon by remember { mutableStateOf(initialEvent?.icon ?: iconNames.first()) }
     val context = LocalContext.current
 
     AlertDialog(
@@ -368,18 +362,12 @@ fun AddEditEventDialog(
                     Text("Pick Date: ${sdf.format(Date(dateMillis))}")
                 }
                 Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = {
-                        val emojis = listOf("🎉", "🎊", "🥳", "👏", "✨", "🎈", "🍰", "🌟")
-                        Toast.makeText(
-                            context,
-                            "Celebrate! ${emojis.random()}",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                ) {
-                    Text("Celebrate!")
-                }
+                ColorIconPicker(
+                    selectedColor = selectedColor,
+                    onColorSelected = { selectedColor = it },
+                    selectedIcon = selectedIcon,
+                    onIconSelected = { selectedIcon = it }
+                )
             }
         },
         confirmButton = {
@@ -391,7 +379,8 @@ fun AddEditEventDialog(
                                 name.text,
                                 dateMillis,
                                 isBirthday,
-                                initialEvent?.color ?: ColorList.random().toArgb()
+                                selectedColor.value.toLong(),
+                                selectedIcon
                             )
                         )
                     }
@@ -403,8 +392,8 @@ fun AddEditEventDialog(
                 if (initialEvent != null && onDelete != null) {
                     Button(
                         onClick = onDelete,
-                        colors = ButtonDefaults.buttonColors(backgroundColor = MaterialTheme.colors.error)
-                    ) { Text("Delete", color = MaterialTheme.colors.onError) }
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) { Text("Delete", color = MaterialTheme.colorScheme.onError) }
                     Spacer(Modifier.width(8.dp))
                 }
                 Button(onClick = onDismiss) { Text("Cancel") }
@@ -413,21 +402,51 @@ fun AddEditEventDialog(
     )
 }
 
+// Color & Icon Picker
 @Composable
-fun ConfettiRow() {
-    val emojis = listOf("🎉", "🎊", "🥳", "🎈", "✨", "🍰", "🌟", "🎂")
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        horizontalArrangement = Arrangement.Center
-    ) {
-        repeat(12) {
-            Text(
-                text = emojis.random(),
-                fontSize = MaterialTheme.typography.h4.fontSize
-            )
-            Spacer(Modifier.width(4.dp))
+fun ColorIconPicker(
+    selectedColor: Color,
+    onColorSelected: (Color) -> Unit,
+    selectedIcon: String,
+    onIconSelected: (String) -> Unit
+) {
+    Column {
+        Text("Pick a color:")
+        Row {
+            colorOptions.forEach { color ->
+                Box(
+                    Modifier
+                        .size(32.dp)
+                        .padding(4.dp)
+                        .background(color, CircleShape)
+                        .border(
+                            width = if (color == selectedColor) 2.dp else 0.dp,
+                            color = if (color == selectedColor) MaterialTheme.colorScheme.primary else Color.Transparent,
+                            shape = CircleShape
+                        )
+                        .clickable { onColorSelected(color) }
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("Pick an icon:")
+        Row {
+            iconNames.forEach { iconName ->
+                val icon = iconMap[iconName] ?: Icons.Default.Cake
+                Box(
+                    Modifier
+                        .size(40.dp)
+                        .padding(4.dp)
+                        .background(
+                            if (iconName == selectedIcon) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent,
+                            CircleShape
+                        )
+                        .clickable { onIconSelected(iconName) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(icon, contentDescription = iconName, tint = MaterialTheme.colorScheme.primary)
+                }
+            }
         }
     }
 }

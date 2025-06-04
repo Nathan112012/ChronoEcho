@@ -36,6 +36,13 @@ android {
 }
 
 dependencies {
+    implementation ("androidx.compose.material3:material3:1.2.0")
+    implementation ("androidx.compose.material:material-icons-extended:1.6.0")
+    implementation ("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation ("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
+    implementation ("androidx.datastore:datastore-preferences:1.1.1")
+    implementation ("androidx.work:work-runtime-ktx:2.9.0")
+    implementation ("com.google.code.gson:gson:2.10.1")
     implementation("androidx.compose.material:material-icons-extended:1.6.7")
     implementation("androidx.compose.animation:animation:1.6.7")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
