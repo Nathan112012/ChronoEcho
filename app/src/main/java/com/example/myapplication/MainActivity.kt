@@ -164,8 +164,8 @@ fun AppWithSplashScreen() {
 fun SplashScreen() {
     val infiniteTransition = rememberInfiniteTransition()
     val scale by infiniteTransition.animateFloat(
-        initialValue = 0.8f,
-        targetValue = 1.2f,
+        initialValue = 0.9f,
+        targetValue = 1.1f,
         animationSpec = infiniteRepeatable(
             animation = tween(900, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -190,18 +190,11 @@ fun SplashScreen() {
     ) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    Icons.Default.Cake,
-                    contentDescription = "App Logo",
-                    modifier = Modifier
-                        .size(100.dp)
-                        .graphicsLayer { scaleX = scale; scaleY = scale },
-                    tint = color
-                )
-                Spacer(Modifier.height(24.dp))
+                Text("🎉", fontSize = 80.sp)
+                Spacer(Modifier.height(12.dp))
                 Text(
                     "ChronoEcho",
-                    style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
+                    style = MaterialTheme.typography.displayLarge.copy(fontWeight = FontWeight.Bold),
                     color = color
                 )
                 Spacer(Modifier.height(8.dp))
@@ -248,7 +241,7 @@ fun BirthdayEventApp() {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Birthday & Event Tracker") }
+                title = { Text("Birthday & Event Tracker", style = MaterialTheme.typography.headlineLarge) }
             )
         },
         floatingActionButton = {
@@ -264,12 +257,18 @@ fun BirthdayEventApp() {
         Column(Modifier.padding(padding)) {
             SearchBar(query = searchQuery, onQueryChange = { searchQuery = it })
             if (filteredEvents.isEmpty()) {
-                // Empty state
+                // Comfy empty state
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.Cake, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(64.dp))
-                        Text("No events yet!", style = MaterialTheme.typography.titleLarge)
-                        Text("Tap + to add your first birthday or event.", style = MaterialTheme.typography.bodyMedium)
+                        Text("🎈", fontSize = 64.sp)
+                        Spacer(Modifier.height(12.dp))
+                        Text("No events yet!", style = MaterialTheme.typography.headlineLarge)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Tap + to add your first birthday or event.",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             } else {
@@ -338,6 +337,20 @@ fun SearchBar(query: String, onQueryChange: (String) -> Unit) {
     )
 }
 
+// Years and Days Calculation
+fun getYearsAndDays(from: Long, to: Long): Pair<Int, Int> {
+    val fromCal = Calendar.getInstance().apply { timeInMillis = from }
+    val toCal = Calendar.getInstance().apply { timeInMillis = to }
+    var years = toCal.get(Calendar.YEAR) - fromCal.get(Calendar.YEAR)
+    var days = toCal.get(Calendar.DAY_OF_YEAR) - fromCal.get(Calendar.DAY_OF_YEAR)
+    if (days < 0) {
+        years -= 1
+        fromCal.set(Calendar.YEAR, fromCal.get(Calendar.YEAR) + years)
+        days = ((toCal.timeInMillis - fromCal.timeInMillis) / (1000 * 60 * 60 * 24)).toInt()
+    }
+    return years to days
+}
+
 // Event Card
 @Composable
 fun EventCard(
@@ -349,6 +362,13 @@ fun EventCard(
     val dateStr = sdf.format(Date(event.date))
     val icon = iconMap[event.icon] ?: Icons.Default.Cake
     val cardColor = Color(event.color.toInt())
+    val now = System.currentTimeMillis()
+    val (years, days) = if (event.isBirthday) getYearsAndDays(event.date, now) else getYearsAndDays(event.date, now)
+    val sinceOrAge = if (event.isBirthday) {
+        "Age: $years years, $days days"
+    } else {
+        "Since: $years years, $days days"
+    }
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -388,6 +408,12 @@ fun EventCard(
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary
                 )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    sinceOrAge,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             }
             IconButton(onClick = onDelete) {
                 Icon(Icons.Default.Favorite, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
@@ -395,6 +421,7 @@ fun EventCard(
         }
     }
 }
+
 // Add/Edit Event Dialog
 @Composable
 fun AddEditEventDialog(
@@ -412,15 +439,17 @@ fun AddEditEventDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initialEvent == null) "Add Event" else "Edit Event") },
+        shape = RoundedCornerShape(24.dp),
+        title = { Text(if (initialEvent == null) "Add Event" else "Edit Event", style = MaterialTheme.typography.headlineSmall) },
         text = {
-            Column {
+            Column(Modifier.padding(vertical = 8.dp)) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Name") }
+                    label = { Text("Name") },
+                    modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Type: ")
                     Spacer(Modifier.width(8.dp))
@@ -438,7 +467,7 @@ fun AddEditEventDialog(
                         Text("Event")
                     }
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(12.dp))
                 val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
                 Button(onClick = {
                     val cal = Calendar.getInstance()
@@ -456,7 +485,7 @@ fun AddEditEventDialog(
                 }) {
                     Text("Pick Date: ${sdf.format(Date(dateMillis))}")
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(12.dp))
                 ColorIconPicker(
                     selectedColor = selectedColor,
                     onColorSelected = { selectedColor = it },
