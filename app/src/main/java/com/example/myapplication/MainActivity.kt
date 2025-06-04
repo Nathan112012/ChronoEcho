@@ -174,7 +174,7 @@ fun BirthdayEventApp() {
         Box(
             Modifier
                 .align(Alignment.BottomStart)
-                .padding(16.dp)
+                .padding(20.dp)
         ) {
             FloatingActionButton(onClick = {
                 editIndex = -1
