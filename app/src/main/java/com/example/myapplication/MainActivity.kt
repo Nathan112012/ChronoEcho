@@ -222,12 +222,13 @@ fun getLiveDetailedAge(eventTime: Long): String {
     }
 
     val diff = abs(currentTime - eventTime)
-    val days = diff / (1000L * 60 * 60 * 24)
+    val years = diff / (1000L * 60 * 60* 24 * 365)
+    val days = diff / (1000L * 60 * 60 * 24) % 365
     val hours = (diff / (1000L * 60 * 60)) % 24
     val minutes = (diff / (1000L * 60)) % 60
     val seconds = (diff / 1000) % 60
 
-    return "$days days $hours hours $minutes minutes $seconds seconds"
+    return "$years years, $days days"
 }
 
 fun getLevel(days: Long): Int = when {
