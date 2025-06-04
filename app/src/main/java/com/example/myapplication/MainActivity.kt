@@ -1,6 +1,5 @@
 package com.example.birthdayevents
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import android.app.*
 import android.content.Context
 import android.os.Build
@@ -8,9 +7,8 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,25 +26,31 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationCompat
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.work.*
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.work.*
+import android.Manifest
 
 // DataStore
 val Context.dataStore by preferencesDataStore(name = "events")
@@ -130,14 +134,6 @@ fun scheduleEventNotification(context: Context, event: Event) {
     }
 }
 
-// Main Activity
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent { BirthdayEventTheme { BirthdayEventApp() } }
-    }
-}
-
 // Material3 Theme
 @Composable
 fun BirthdayEventTheme(content: @Composable () -> Unit) {
@@ -147,6 +143,87 @@ fun BirthdayEventTheme(content: @Composable () -> Unit) {
         typography = Typography(),
         content = content
     )
+}
+
+// Splash Screen
+@Composable
+fun AppWithSplashScreen() {
+    var showSplash by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(1800)
+        showSplash = false
+    }
+    if (showSplash) {
+        SplashScreen()
+    } else {
+        BirthdayEventApp()
+    }
+}
+
+@Composable
+fun SplashScreen() {
+    val infiniteTransition = rememberInfiniteTransition()
+    val scale by infiniteTransition.animateFloat(
+        initialValue = 0.8f,
+        targetValue = 1.2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        )
+    )
+    val progress by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        )
+    )
+    val color = lerp(
+        MaterialTheme.colorScheme.primary,
+        MaterialTheme.colorScheme.secondary,
+        progress
+    )
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    Icons.Default.Cake,
+                    contentDescription = "App Logo",
+                    modifier = Modifier
+                        .size(100.dp)
+                        .graphicsLayer { scaleX = scale; scaleY = scale },
+                    tint = color
+                )
+                Spacer(Modifier.height(24.dp))
+                Text(
+                    "ChronoEcho",
+                    style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
+                    color = color
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Loading...",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+                )
+            }
+        }
+    }
+}
+
+// Main Activity
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
+        }
+        setContent { BirthdayEventTheme { AppWithSplashScreen() } }
+    }
 }
 
 // Main App
@@ -171,7 +248,7 @@ fun BirthdayEventApp() {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("ChronoEcho by Nathan the Best") }
+                title = { Text("Birthday & Event Tracker") }
             )
         },
         floatingActionButton = {
@@ -271,27 +348,46 @@ fun EventCard(
     val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
     val dateStr = sdf.format(Date(event.date))
     val icon = iconMap[event.icon] ?: Icons.Default.Cake
-    val cardColor = Color(event.color)
+    val cardColor = Color(event.color.toInt())
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
             .clickable { onEdit() },
         colors = CardDefaults.cardColors(containerColor = cardColor),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(24.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
         Row(
             Modifier
-                .padding(16.dp)
+                .padding(20.dp)
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp))
-            Spacer(Modifier.width(12.dp))
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(48.dp)
+            )
+            Spacer(Modifier.width(20.dp))
             Column(Modifier.weight(1f)) {
-                Text(event.name, style = MaterialTheme.typography.titleMedium)
-                Text("Date: $dateStr", style = MaterialTheme.typography.bodyMedium)
-                Text(if (event.isBirthday) "Birthday" else "Event", style = MaterialTheme.typography.bodySmall)
+                Text(
+                    event.name,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Date: $dateStr",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    if (event.isBirthday) "🎂 Birthday" else "⭐ Event",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
             IconButton(onClick = onDelete) {
                 Icon(Icons.Default.Favorite, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
@@ -299,7 +395,6 @@ fun EventCard(
         }
     }
 }
-
 // Add/Edit Event Dialog
 @Composable
 fun AddEditEventDialog(
@@ -311,7 +406,7 @@ fun AddEditEventDialog(
     var name by remember { mutableStateOf(TextFieldValue(initialEvent?.name ?: "")) }
     var isBirthday by remember { mutableStateOf(initialEvent?.isBirthday ?: true) }
     var dateMillis by remember { mutableStateOf(initialEvent?.date ?: System.currentTimeMillis()) }
-    var selectedColor by remember { mutableStateOf(initialEvent?.color?.let { Color(it) } ?: colorOptions.first()) }
+    var selectedColor by remember { mutableStateOf(initialEvent?.color?.let { Color(it.toInt()) } ?: colorOptions.first()) }
     var selectedIcon by remember { mutableStateOf(initialEvent?.icon ?: iconNames.first()) }
     val context = LocalContext.current
 
@@ -379,10 +474,12 @@ fun AddEditEventDialog(
                                 name.text,
                                 dateMillis,
                                 isBirthday,
-                                selectedColor.value.toLong(),
+                                selectedColor.toArgb().toLong(),
                                 selectedIcon
                             )
                         )
+                    } else {
+                        Toast.makeText(context, "Name cannot be empty", Toast.LENGTH_SHORT).show()
                     }
                 }
             ) { Text("Save") }
