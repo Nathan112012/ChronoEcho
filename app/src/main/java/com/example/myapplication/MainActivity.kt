@@ -240,7 +240,7 @@ fun BirthdayEventApp() {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Birthday & Event Tracker", style = MaterialTheme.typography.headlineLarge) }
+                title = { Text("ChronoEcho ", style = MaterialTheme.typography.headlineLarge) }
             )
         },
         floatingActionButton = {
