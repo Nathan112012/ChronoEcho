@@ -15,18 +15,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Cake
-import androidx.compose.material.icons.filled.Event
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
@@ -90,6 +85,7 @@ fun saveEvents(context: Context, events: List<Event>) {
         }
     }
 }
+
 fun loadEvents(context: Context): List<Event> {
     return runBlocking {
         val prefs = context.dataStore.data.first()
@@ -99,6 +95,7 @@ fun loadEvents(context: Context): List<Event> {
     }
 }
 
+// Notification Worker
 // Notification Worker
 class EventNotificationWorker(
     context: Context,
@@ -122,6 +119,7 @@ class EventNotificationWorker(
         return Result.success()
     }
 }
+
 fun scheduleEventNotification(context: Context, event: Event) {
     val oneDayBefore = event.date - TimeUnit.DAYS.toMillis(1)
     val delay = oneDayBefore - System.currentTimeMillis()
@@ -209,6 +207,7 @@ fun SplashScreen() {
 }
 
 // Main Activity
+// Main Activity
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -257,7 +256,6 @@ fun BirthdayEventApp() {
         Column(Modifier.padding(padding)) {
             SearchBar(query = searchQuery, onQueryChange = { searchQuery = it })
             if (filteredEvents.isEmpty()) {
-                // Comfy empty state
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("🎈", fontSize = 64.sp)
@@ -274,6 +272,7 @@ fun BirthdayEventApp() {
             } else {
                 LazyColumn {
                     items(filteredEvents) { event ->
+                        val currentIndex = filteredEvents.indexOf(event)
                         EventCard(
                             event = event,
                             onEdit = {
@@ -293,7 +292,29 @@ fun BirthdayEventApp() {
                                         recentlyDeletedEvent = null
                                     }
                                 }
-                            }
+                            },
+                            onMoveUp = if (currentIndex > 0) {
+                                {
+                                    val newList = events.toMutableList()
+                                    val index = newList.indexOf(event)
+                                    if (index > 0) {
+                                        newList.removeAt(index)
+                                        newList.add(index - 1, event)
+                                        events = newList
+                                    }
+                                }
+                            } else null,
+                            onMoveDown = if (currentIndex < filteredEvents.size - 1) {
+                                {
+                                    val newList = events.toMutableList()
+                                    val index = newList.indexOf(event)
+                                    if (index < newList.size - 1) {
+                                        newList.removeAt(index)
+                                        newList.add(index + 1, event)
+                                        events = newList
+                                    }
+                                }
+                            } else null
                         )
                     }
                 }
@@ -322,7 +343,7 @@ fun BirthdayEventApp() {
         }
     }
 }
-
+// Search Bar
 // Search Bar
 @Composable
 fun SearchBar(query: String, onQueryChange: (String) -> Unit) {
@@ -356,7 +377,9 @@ fun getYearsAndDays(from: Long, to: Long): Pair<Int, Int> {
 fun EventCard(
     event: Event,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onMoveUp: (() -> Unit)? = null,
+    onMoveDown: (() -> Unit)? = null
 ) {
     val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
     val dateStr = sdf.format(Date(event.date))
@@ -369,6 +392,7 @@ fun EventCard(
     } else {
         "Since: $years years, $days days"
     }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -378,50 +402,83 @@ fun EventCard(
         shape = RoundedCornerShape(24.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
-        Row(
-            Modifier
-                .padding(20.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(48.dp)
-            )
-            Spacer(Modifier.width(20.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    event.name,
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+        Column(Modifier.padding(16.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(48.dp)
                 )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Date: $dateStr",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    if (event.isBirthday) "🎂 Birthday" else "⭐ Event",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    sinceOrAge,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Favorite, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+                Spacer(Modifier.width(20.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        event.name,
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Date: $dateStr",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        if (event.isBirthday) "🎂 Birthday" else "⭐ Event",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        sinceOrAge,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                Column {
+                    IconButton(
+                        onClick = { onMoveUp?.invoke() },
+                        enabled = onMoveUp != null
+                    ) {
+                        Icon(
+                            Icons.Default.ArrowUpward,
+                            contentDescription = "Move Up",
+                            tint = if (onMoveUp != null)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                        )
+                    }
+                    IconButton(
+                        onClick = { onMoveDown?.invoke() },
+                        enabled = onMoveDown != null
+                    ) {
+                        Icon(
+                            Icons.Default.ArrowDownward,
+                            contentDescription = "Move Down",
+                            tint = if (onMoveDown != null)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                        )
+                    }
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        Icons.Default.Favorite,
+                        contentDescription = "Delete",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
             }
         }
     }
 }
-
+// Add/Edit Event Dialog
 // Add/Edit Event Dialog
 @Composable
 fun AddEditEventDialog(
