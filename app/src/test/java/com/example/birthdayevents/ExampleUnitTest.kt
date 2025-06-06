@@ -8,7 +8,9 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,15 +19,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.font.FontWeight
@@ -46,13 +45,12 @@ import com.google.gson.reflect.TypeToken
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.work.*
 import android.Manifest
+import org.burnoutcrew.reorderable.*
 
-// DataStore
 val Context.dataStore by preferencesDataStore(name = "events")
 val EVENTS_KEY = stringPreferencesKey("events_json")
 val gson = Gson()
 
-// Event Data
 data class Event(
     val name: String,
     val date: Long,
@@ -61,7 +59,6 @@ data class Event(
     val icon: String
 )
 
-// Icon mapping
 val iconMap = mapOf(
     "Cake" to Icons.Default.Cake,
     "Star" to Icons.Default.Star,
@@ -70,13 +67,11 @@ val iconMap = mapOf(
 )
 val iconNames = iconMap.keys.toList()
 
-// Color options
 val colorOptions = listOf(
     Color(0xFFFFF59D), Color(0xFFB2FF59), Color(0xFF81D4FA),
     Color(0xFFFFAB91), Color(0xFFE1BEE7), Color(0xFFFFCDD2)
 )
 
-// Save/load events
 fun saveEvents(context: Context, events: List<Event>) {
     val json = gson.toJson(events)
     runBlocking {
@@ -95,8 +90,6 @@ fun loadEvents(context: Context): List<Event> {
     }
 }
 
-// Notification Worker
-// Notification Worker
 class EventNotificationWorker(
     context: Context,
     params: WorkerParameters
@@ -132,7 +125,6 @@ fun scheduleEventNotification(context: Context, event: Event) {
     }
 }
 
-// Material3 Theme
 @Composable
 fun BirthdayEventTheme(content: @Composable () -> Unit) {
     val darkTheme = isSystemInDarkTheme()
@@ -141,21 +133,6 @@ fun BirthdayEventTheme(content: @Composable () -> Unit) {
         typography = Typography(),
         content = content
     )
-}
-
-// Splash Screen
-@Composable
-fun AppWithSplashScreen() {
-    var showSplash by remember { mutableStateOf(true) }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(1800)
-        showSplash = false
-    }
-    if (showSplash) {
-        SplashScreen()
-    } else {
-        BirthdayEventApp()
-    }
 }
 
 @Composable
@@ -188,7 +165,12 @@ fun SplashScreen() {
     ) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("🎉", fontSize = 80.sp)
+                Icon(
+                    Icons.Default.CalendarMonth, // Calendar icon
+                    contentDescription = "Calendar",
+                    modifier = Modifier.size(80.dp).scale(scale),
+                    tint = color
+                )
                 Spacer(Modifier.height(12.dp))
                 Text(
                     "ChronoEcho",
@@ -206,8 +188,6 @@ fun SplashScreen() {
     }
 }
 
-// Main Activity
-// Main Activity
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -218,7 +198,22 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// Main App
+enum class SortMode(val displayName: String) {
+    Closest("Closest"),
+    Farthest("Farthest"),
+    MostRecent("Most Recent"),
+    Custom("Custom")
+}
+
+fun sortEvents(events: List<Event>, mode: SortMode): List<Event> {
+    return when (mode) {
+        SortMode.Closest -> events.sortedBy { it.date }
+        SortMode.Farthest -> events.sortedByDescending { it.date }
+        SortMode.MostRecent -> events.sortedByDescending { it.date }
+        SortMode.Custom -> events
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BirthdayEventApp() {
@@ -230,25 +225,44 @@ fun BirthdayEventApp() {
     val snackbarHostState = remember { SnackbarHostState() }
     var recentlyDeletedEvent by remember { mutableStateOf<Event?>(null) }
     val scope = rememberCoroutineScope()
+    var sortMode by remember { mutableStateOf(SortMode.Custom) }
 
     // Save events on change
     LaunchedEffect(events) { saveEvents(context, events) }
 
-    // Filtered events
-    val filteredEvents = events.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    // Filtered and sorted events
+    val filteredEvents = sortEvents(
+        events.filter { it.name.contains(searchQuery, ignoreCase = true) },
+        sortMode
+    )
+
+    val reorderState = rememberReorderableLazyListState(onMove = { from, to ->
+        if (sortMode == SortMode.Custom) {
+            events = events.toMutableList().apply { add(to.index, removeAt(from.index)) }
+        }
+    })
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("ChronoEcho ", style = MaterialTheme.typography.headlineLarge) }
+            CenterAlignedTopAppBar(
+                title = { Text("ChronoEcho", style = MaterialTheme.typography.headlineLarge) },
+                actions = {
+                    SortMenu(sortMode, onSortChange = { sortMode = it })
+                }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = {
-                editEvent = null
-                showDialog = true
-            }) {
-                Icon(Icons.Default.Cake, contentDescription = "Add Event")
+            LargeFloatingActionButton(
+                onClick = {
+                    editEvent = null
+                    showDialog = true
+                }
+            ) {
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = "Add Event",
+                    modifier = Modifier.size(36.dp) // Larger plus icon
+                )
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -270,52 +284,75 @@ fun BirthdayEventApp() {
                     }
                 }
             } else {
-                LazyColumn {
-                    items(filteredEvents) { event ->
-                        val currentIndex = filteredEvents.indexOf(event)
-                        EventCard(
-                            event = event,
-                            onEdit = {
-                                editEvent = event
-                                showDialog = true
-                            },
-                            onDelete = {
-                                events = events - event
-                                recentlyDeletedEvent = event
-                                scope.launch {
-                                    val result = snackbarHostState.showSnackbar(
-                                        message = "Event deleted",
-                                        actionLabel = "Undo"
-                                    )
-                                    if (result == SnackbarResult.ActionPerformed) {
-                                        events = events + recentlyDeletedEvent!!
-                                        recentlyDeletedEvent = null
+                if (sortMode == SortMode.Custom) {
+                    LazyColumn(
+                        state = reorderState.listState,
+                        modifier = Modifier.reorderable(reorderState)
+                    ) {
+                        items(filteredEvents, key = { it.name + it.date }) { event ->
+                            ReorderableItem(reorderState, key = event.name + event.date) { isDragging ->
+                                EventCard(
+                                    event = event,
+                                    onEdit = {
+                                        editEvent = event
+                                        showDialog = true
+                                    },
+                                    onDelete = {
+                                        events = events - event
+                                        recentlyDeletedEvent = event
+                                        scope.launch {
+                                            val result = snackbarHostState.showSnackbar(
+                                                message = "Event deleted",
+                                                actionLabel = "Undo"
+                                            )
+                                            if (result == SnackbarResult.ActionPerformed) {
+                                                events = events + recentlyDeletedEvent!!
+                                                recentlyDeletedEvent = null
+                                            }
+                                        }
+                                    },
+                                    dragHandle = {
+                                        Icon(
+                                            Icons.Default.DragHandle,
+                                            contentDescription = "Drag",
+                                            modifier = Modifier
+                                                .detectReorder(reorderState)
+                                                .size(32.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    },
+                                    isDragging = isDragging
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    LazyColumn {
+                        items(filteredEvents, key = { it.name + it.date }) { event ->
+                            EventCard(
+                                event = event,
+                                onEdit = {
+                                    editEvent = event
+                                    showDialog = true
+                                },
+                                onDelete = {
+                                    events = events - event
+                                    recentlyDeletedEvent = event
+                                    scope.launch {
+                                        val result = snackbarHostState.showSnackbar(
+                                            message = "Event deleted",
+                                            actionLabel = "Undo"
+                                        )
+                                        if (result == SnackbarResult.ActionPerformed) {
+                                            events = events + recentlyDeletedEvent!!
+                                            recentlyDeletedEvent = null
+                                        }
                                     }
-                                }
-                            },
-                            onMoveUp = if (currentIndex > 0) {
-                                {
-                                    val newList = events.toMutableList()
-                                    val index = newList.indexOf(event)
-                                    if (index > 0) {
-                                        newList.removeAt(index)
-                                        newList.add(index - 1, event)
-                                        events = newList
-                                    }
-                                }
-                            } else null,
-                            onMoveDown = if (currentIndex < filteredEvents.size - 1) {
-                                {
-                                    val newList = events.toMutableList()
-                                    val index = newList.indexOf(event)
-                                    if (index < newList.size - 1) {
-                                        newList.removeAt(index)
-                                        newList.add(index + 1, event)
-                                        events = newList
-                                    }
-                                }
-                            } else null
-                        )
+                                },
+                                dragHandle = null,
+                                isDragging = false
+                            )
+                        }
                     }
                 }
             }
@@ -343,8 +380,28 @@ fun BirthdayEventApp() {
         }
     }
 }
-// Search Bar
-// Search Bar
+
+@Composable
+fun SortMenu(sortMode: SortMode, onSortChange: (SortMode) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        FilledTonalButton(onClick = { expanded = true }) {
+            Text("Sort: ${sortMode.displayName}")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            SortMode.values().forEach { mode ->
+                DropdownMenuItem(
+                    text = { Text(mode.displayName) },
+                    onClick = {
+                        onSortChange(mode)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun SearchBar(query: String, onQueryChange: (String) -> Unit) {
     OutlinedTextField(
@@ -358,7 +415,6 @@ fun SearchBar(query: String, onQueryChange: (String) -> Unit) {
     )
 }
 
-// Years and Days Calculation
 fun getYearsAndDays(from: Long, to: Long): Pair<Int, Int> {
     val fromCal = Calendar.getInstance().apply { timeInMillis = from }
     val toCal = Calendar.getInstance().apply { timeInMillis = to }
@@ -372,14 +428,13 @@ fun getYearsAndDays(from: Long, to: Long): Pair<Int, Int> {
     return years to days
 }
 
-// Event Card
 @Composable
 fun EventCard(
     event: Event,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onMoveUp: (() -> Unit)? = null,
-    onMoveDown: (() -> Unit)? = null
+    dragHandle: (@Composable () -> Unit)? = null,
+    isDragging: Boolean = false
 ) {
     val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
     val dateStr = sdf.format(Date(event.date))
@@ -393,93 +448,75 @@ fun EventCard(
         "Since: $years years, $days days"
     }
 
-    Card(
+    ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
-            .clickable { onEdit() },
-        colors = CardDefaults.cardColors(containerColor = cardColor),
+            .background(if (isDragging) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+            .animateItemPlacement(),
+        colors = CardDefaults.elevatedCardColors(containerColor = cardColor),
         shape = RoundedCornerShape(24.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 6.dp)
     ) {
-        Column(Modifier.padding(16.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(48.dp)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (dragHandle != null) {
+                Box(
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .size(32.dp)
+                        .then(Modifier), // dragHandle will add detectReorder
+                    contentAlignment = Alignment.Center
+                ) {
+                    dragHandle()
+                }
+            }
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(48.dp)
+            )
+            Spacer(Modifier.width(20.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    event.name,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                 )
-                Spacer(Modifier.width(20.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        event.name,
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Date: $dateStr",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        if (event.isBirthday) "🎂 Birthday" else "⭐ Event",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        sinceOrAge,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-
-                Column {
-                    IconButton(
-                        onClick = { onMoveUp?.invoke() },
-                        enabled = onMoveUp != null
-                    ) {
-                        Icon(
-                            Icons.Default.ArrowUpward,
-                            contentDescription = "Move Up",
-                            tint = if (onMoveUp != null)
-                                MaterialTheme.colorScheme.primary
-                            else
-                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                        )
-                    }
-                    IconButton(
-                        onClick = { onMoveDown?.invoke() },
-                        enabled = onMoveDown != null
-                    ) {
-                        Icon(
-                            Icons.Default.ArrowDownward,
-                            contentDescription = "Move Down",
-                            tint = if (onMoveDown != null)
-                                MaterialTheme.colorScheme.primary
-                            else
-                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                        )
-                    }
-                }
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        Icons.Default.Favorite,
-                        contentDescription = "Delete",
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Date: $dateStr",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    if (event.isBirthday) "🎂 Birthday" else "⭐ Event",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    sinceOrAge,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            IconButton(onClick = onDelete) {
+                Icon(
+                    Icons.Default.Delete, // Use delete icon for clarity
+                    contentDescription = "Delete",
+                    tint = MaterialTheme.colorScheme.error
+                )
             }
         }
     }
 }
-// Add/Edit Event Dialog
-// Add/Edit Event Dialog
+
 @Composable
 fun AddEditEventDialog(
     initialEvent: Event?,
@@ -507,26 +544,34 @@ fun AddEditEventDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(12.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Type: ")
-                    Spacer(Modifier.width(8.dp))
-                    Row {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
                         RadioButton(
                             selected = isBirthday,
                             onClick = { isBirthday = true }
                         )
-                        Text("Birthday")
-                        Spacer(Modifier.width(8.dp))
+                        Text("Birthday", modifier = Modifier.padding(start = 4.dp))
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
                         RadioButton(
                             selected = !isBirthday,
                             onClick = { isBirthday = false }
                         )
-                        Text("Event")
+                        Text("Event", modifier = Modifier.padding(start = 4.dp))
                     }
                 }
                 Spacer(Modifier.height(12.dp))
                 val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                Button(onClick = {
+                FilledTonalButton(onClick = {
                     val cal = Calendar.getInstance()
                     cal.timeInMillis = dateMillis
                     DatePickerDialog(
@@ -552,7 +597,7 @@ fun AddEditEventDialog(
             }
         },
         confirmButton = {
-            Button(
+            FilledTonalButton(
                 onClick = {
                     if (name.text.isNotBlank()) {
                         onSave(
@@ -573,19 +618,18 @@ fun AddEditEventDialog(
         dismissButton = {
             Row {
                 if (initialEvent != null && onDelete != null) {
-                    Button(
+                    FilledTonalButton(
                         onClick = onDelete,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = MaterialTheme.colorScheme.error)
                     ) { Text("Delete", color = MaterialTheme.colorScheme.onError) }
                     Spacer(Modifier.width(8.dp))
                 }
-                Button(onClick = onDismiss) { Text("Cancel") }
+                OutlinedButton(onClick = onDismiss) { Text("Cancel") }
             }
         }
     )
 }
 
-// Color & Icon Picker
 @Composable
 fun ColorIconPicker(
     selectedColor: Color,
