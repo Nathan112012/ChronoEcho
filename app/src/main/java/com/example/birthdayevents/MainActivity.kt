@@ -1,7 +1,6 @@
 package com.example.birthdayevents
 
 import android.Manifest
-import android.app.DatePickerDialog
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -14,6 +13,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -29,6 +29,9 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,15 +55,10 @@ import java.util.*
 import java.util.concurrent.TimeUnit
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.work.*
 import org.burnoutcrew.reorderable.*
 import org.burnoutcrew.reorderable.detectReorderAfterLongPress
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.rememberDatePickerState
-// <--- THIS IS THE IMPORTANT ONE
+
 val Context.dataStore by preferencesDataStore(name = "events")
 val EVENTS_KEY = stringPreferencesKey("events_json")
 val gson = Gson()
@@ -480,63 +478,63 @@ fun EventCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .clickable { onEdit() },
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         colors = CardDefaults.cardColors(containerColor = cardColor),
         shape = RoundedCornerShape(24.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
-        Column(Modifier.padding(16.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (dragHandle != null) {
-                    dragHandle()
-                }
-                Icon(
-                    icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(48.dp)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (dragHandle != null) {
+                dragHandle()
+            }
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(48.dp)
+            )
+            Spacer(Modifier.width(20.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    event.name,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                 )
-                Spacer(Modifier.width(20.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        event.name,
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Date: $dateStr",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        if (event.isBirthday) "🎂 Birthday" else "⭐ Event",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        sinceOrAge,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        Icons.Default.Favorite,
-                        contentDescription = "Delete",
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Date: $dateStr",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    if (event.isBirthday) "🎂 Birthday" else "⭐ Event",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    sinceOrAge,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            IconButton(onClick = onDelete) {
+                Icon(
+                    Icons.Default.Favorite,
+                    contentDescription = "Delete",
+                    tint = MaterialTheme.colorScheme.error
+                )
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddEditEventDialog(
     initialEvent: Event?,
@@ -547,9 +545,14 @@ fun AddEditEventDialog(
     var name by remember { mutableStateOf(TextFieldValue(initialEvent?.name ?: "")) }
     var isBirthday by remember { mutableStateOf(initialEvent?.isBirthday ?: true) }
     var dateMillis by remember { mutableStateOf(initialEvent?.date ?: System.currentTimeMillis()) }
+    var showDatePicker by remember { mutableStateOf(false) }
     var selectedColor by remember { mutableStateOf(initialEvent?.color?.let { Color(it.toInt()) } ?: colorOptions.first()) }
     var selectedIcon by remember { mutableStateOf(initialEvent?.icon ?: iconNames.first()) }
     val context = LocalContext.current
+
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = dateMillis
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -593,20 +596,7 @@ fun AddEditEventDialog(
                 }
                 Spacer(Modifier.height(12.dp))
                 val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                Button(onClick = {
-                    val cal = Calendar.getInstance()
-                    cal.timeInMillis = dateMillis
-                    DatePickerDialog(
-                        context,
-                        { _, y, m, d ->
-                            cal.set(y, m, d)
-                            dateMillis = cal.timeInMillis
-                        },
-                        cal.get(Calendar.YEAR),
-                        cal.get(Calendar.MONTH),
-                        cal.get(Calendar.DAY_OF_MONTH)
-                    ).show()
-                }) {
+                Button(onClick = { showDatePicker = true }) {
                     Text("Pick Date: ${sdf.format(Date(dateMillis))}")
                 }
                 Spacer(Modifier.height(12.dp))
@@ -651,6 +641,27 @@ fun AddEditEventDialog(
             }
         }
     )
+
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let {
+                            dateMillis = it
+                        }
+                        showDatePicker = false
+                    }
+                ) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
 }
 
 @Composable
