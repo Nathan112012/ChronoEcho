@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Search
@@ -73,6 +74,12 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 // Removed unused imports: import androidx.compose.foundation.gestures.Orientation, import androidx.compose.foundation.gestures.draggable
 
 
@@ -272,7 +279,7 @@ fun sortEvents(events: List<Event>, mode: SortMode): List<Event> {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun BirthdayEventApp() {
     val context = LocalContext.current
@@ -309,61 +316,19 @@ fun BirthdayEventApp() {
 
     Scaffold(
         topBar = {
-            Surface(
-                tonalElevation = 3.dp,
-                shadowElevation = 3.dp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        "ChronoEcho",
-                        style = MaterialTheme.typography.headlineLarge.copy(
-                            fontWeight = FontWeight.Bold
-                        ),
-                        color = MaterialTheme.colorScheme.primary
-                    )
+            CenterAlignedTopAppBar(
+                title = { Text("ChronoEcho", style = MaterialTheme.typography.headlineLarge) },
+                actions = {
                     SortMenu(sortMode, onSortChange = { sortMode = it })
                 }
-            }
+            )
         },
         floatingActionButton = {
-            var isPressed by remember { mutableStateOf(false) }
-            val scale by animateFloatAsState(
-                targetValue = if (isPressed) 0.9f else 1f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessLow
-                ),
-                label = "fabScale"
-            )
-
             LargeFloatingActionButton(
                 onClick = {
                     editEvent = null
                     showDialog = true
-                },
-                modifier = Modifier
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                    }
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onPress = {
-                                isPressed = true
-                                tryAwaitRelease()
-                                isPressed = false
-                            }
-                        )
-                    },
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                }
             ) {
                 Icon(
                     Icons.Default.Add,
@@ -373,50 +338,60 @@ fun BirthdayEventApp() {
             }
         },
         snackbarHost = { 
-            SnackbarHost(
-                hostState = snackbarHostState,
-                modifier = Modifier.padding(16.dp)
-            ) { data ->
+            SnackbarHost(snackbarHostState) { data ->
                 Snackbar(
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .fillMaxWidth(),
+                    modifier = Modifier.padding(16.dp),
                     action = {
                         TextButton(
                             onClick = { data.performAction() }
                         ) {
-                            Text("Undo")
+                            Text(
+                                "UNDO",
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
                         }
                     }
                 ) {
                     Text(data.visuals.message)
                 }
             }
-        },
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLowest
-    ) { padding ->
+        }
+    ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(paddingValues)
         ) {
-            SearchBar(query = searchQuery, onQueryChange = { searchQuery = it })
-            
+            SearchBar(
+                query = searchQuery,
+                onQueryChange = { searchQuery = it }
+            )
+
             if (filteredEvents.isEmpty()) {
                 EmptyStateMessage()
             } else {
                 if (sortMode == SortMode.Custom) {
                     LazyColumn(
                         state = reorderState.listState,
-                        modifier = Modifier.reorderable(reorderState)
+                        modifier = Modifier
+                            .reorderable(reorderState)
+                            .detectReorderAfterLongPress(reorderState)
                     ) {
                         items(filteredEvents, key = { it.id }) { event ->
-                            ReorderableItem(reorderState, key = event.id) { isDragging ->
+                            ReorderableItem(
+                                reorderableState = reorderState,
+                                key = event.id
+                            ) { isDragging ->
                                 EventCard(
-                                    modifier = Modifier.animateItemPlacement(spring(
-                                        dampingRatio = Spring.DampingRatioNoBouncy,
-                                        stiffness = Spring.StiffnessVeryLow
-                                    )),
+                                    modifier = Modifier
+                                        .graphicsLayer {
+                                            scaleX = if (isDragging) 1.05f else 1f
+                                            scaleY = if (isDragging) 1.05f else 1f
+                                            shadowElevation = if (isDragging) 8f else 0f
+                                        },
                                     event = event,
                                     onEdit = {
                                         editEvent = event
@@ -429,13 +404,16 @@ fun BirthdayEventApp() {
                                         scope.launch {
                                             val result = snackbarHostState.showSnackbar(
                                                 message = "Event deleted",
-                                                actionLabel = "Undo"
+                                                actionLabel = "Undo",
+                                                duration = SnackbarDuration.Short
                                             )
                                             if (result == SnackbarResult.ActionPerformed) {
                                                 recentlyDeletedEvent?.let { (ev, idx) ->
                                                     events = events.toMutableList().apply { add(idx, ev) }
                                                     recentlyDeletedEvent = null
                                                 }
+                                            } else {
+                                                recentlyDeletedEvent = null
                                             }
                                         }
                                     },
@@ -443,14 +421,12 @@ fun BirthdayEventApp() {
                                         Box(
                                             modifier = Modifier
                                                 .size(56.dp)
-                                                .detectReorderAfterLongPress(reorderState)
                                                 .padding(end = 8.dp),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
                                                 Icons.Default.DragHandle,
-                                                contentDescription = "Drag",
-                                                modifier = Modifier.size(28.dp),
+                                                contentDescription = "Drag to reorder",
                                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
@@ -476,13 +452,16 @@ fun BirthdayEventApp() {
                                     scope.launch {
                                         val result = snackbarHostState.showSnackbar(
                                             message = "Event deleted",
-                                            actionLabel = "Undo"
+                                            actionLabel = "Undo",
+                                            duration = SnackbarDuration.Short
                                         )
                                         if (result == SnackbarResult.ActionPerformed) {
                                             recentlyDeletedEvent?.let { (ev, idx) ->
                                                 events = events.toMutableList().apply { add(idx, ev) }
                                                 recentlyDeletedEvent = null
                                             }
+                                        } else {
+                                            recentlyDeletedEvent = null
                                         }
                                     }
                                 }
@@ -560,8 +539,8 @@ fun SortMenu(sortMode: SortMode, onSortChange: (SortMode) -> Unit) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Icon(
+        ) {
+            Icon(
                     Icons.Default.Sort,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp)
@@ -572,7 +551,7 @@ fun SortMenu(sortMode: SortMode, onSortChange: (SortMode) -> Unit) {
                 )
             }
         }
-
+        
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
@@ -583,31 +562,31 @@ fun SortMenu(sortMode: SortMode, onSortChange: (SortMode) -> Unit) {
                 )
         ) {
             SortMode.values().forEach { mode ->
-                DropdownMenuItem(
+            DropdownMenuItem(
                     text = {
                         Text(
                             mode.name.replace("_", " "),
                             style = MaterialTheme.typography.bodyLarge
                         )
                     },
-                    onClick = {
+                onClick = {
                         onSortChange(mode)
-                        expanded = false
-                    },
-                    leadingIcon = {
-                        Icon(
+                    expanded = false
+                },
+                leadingIcon = {
+                    Icon(
                             when (mode) {
                                 SortMode.Closest -> Icons.Default.ArrowUpward
                                 SortMode.Farthest -> Icons.Default.ArrowDownward
                                 SortMode.Most_Recent -> Icons.Default.Update
                                 SortMode.Custom -> Icons.Default.DragHandle
                             },
-                            contentDescription = null,
+                        contentDescription = null,
                             tint = if (mode == sortMode) 
-                                MaterialTheme.colorScheme.primary 
-                            else 
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                            MaterialTheme.colorScheme.primary 
+                        else 
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     },
                     colors = MenuDefaults.itemColors(
                         textColor = if (mode == sortMode) 
@@ -619,7 +598,7 @@ fun SortMenu(sortMode: SortMode, onSortChange: (SortMode) -> Unit) {
                         else 
                             MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                )
+            )
             }
         }
     }
@@ -654,7 +633,7 @@ fun SearchBar(query: String, onQueryChange: (String) -> Unit) {
                     MaterialTheme.colorScheme.onSurfaceVariant
             )
         },
-        trailingIcon = {
+        trailingIcon = { 
             if (query.isNotEmpty()) {
                 IconButton(onClick = { onQueryChange("") }) {
                     Icon(
@@ -716,85 +695,32 @@ fun EmptyStateMessage() {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun EventCard(
     event: Event,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
     dragHandle: (@Composable () -> Unit)? = null,
     isDragging: Boolean = false
 ) {
-    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    val sdf = SimpleDateFormat("MMMM d, yyyy", Locale.getDefault())
     val dateStr = sdf.format(Date(event.date))
     val icon = iconMap[event.icon] ?: Icons.Default.Cake
     val cardColor = Color(event.color)
     val now = System.currentTimeMillis()
 
-    // Enhanced animations with smoother transitions
-    val elevation by animateDpAsState(
-        targetValue = if (isDragging) 8.dp else 0.dp,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessVeryLow
-        ),
-        label = "cardElevation"
-    )
-    val alpha by animateFloatAsState(
-        targetValue = if (isDragging) 0.8f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessVeryLow
-        ),
-        label = "cardAlpha"
-    )
-    val scale by animateFloatAsState(
-        targetValue = if (isDragging) 1.03f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessVeryLow
-        ),
-        label = "cardScale"
-    )
-
-    // Hover state with smoother animation
-    var isHovered by remember { mutableStateOf(false) }
-    val hoverScale by animateFloatAsState(
-        targetValue = if (isHovered) 1.01f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessUltraLow
-        ),
-        label = "hoverScale"
-    )
-
-    Card(
-        modifier = Modifier
+    ElevatedCard(
+        modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp)
-            .graphicsLayer {
-                scaleX = scale * hoverScale
-                scaleY = scale * hoverScale
-                this.alpha = alpha
-            }
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { onEdit() },
-                    onPress = {
-                        isHovered = true
-                        tryAwaitRelease()
-                        isHovered = false
-                    }
-                )
-            },
-        colors = CardDefaults.cardColors(
-            containerColor = cardColor,
-            contentColor = MaterialTheme.colorScheme.onSurface
-        ),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 0.dp,
-            pressedElevation = 0.dp,
-            focusedElevation = 0.dp
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .background(if (isDragging) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+            .clickable(onClick = onEdit),
+        colors = CardDefaults.elevatedCardColors(containerColor = cardColor),
+        shape = RoundedCornerShape(24.dp),
+        elevation = CardDefaults.elevatedCardElevation(
+            defaultElevation = if (isDragging) 8.dp else 2.dp
         )
     ) {
         Row(
@@ -813,7 +739,7 @@ fun EventCard(
                 modifier = Modifier
                     .size(48.dp)
                     .graphicsLayer {
-                        rotationZ = if (isHovered) 5f else 0f
+                        rotationZ = if (isDragging) 5f else 0f
                     }
             )
             Spacer(Modifier.width(20.dp))
@@ -868,18 +794,33 @@ fun EventCard(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
             }
-            IconButton(
-                onClick = onDelete,
-                modifier = Modifier
-                    .graphicsLayer {
-                        rotationZ = if (isHovered) -5f else 0f
-                    }
-            ) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
-                )
+            Row {
+                IconButton(
+                    onClick = onEdit,
+                    modifier = Modifier
+                        .graphicsLayer {
+                            rotationZ = if (isDragging) 5f else 0f
+                        }
+                ) {
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = "Edit",
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                    )
+                }
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier
+                        .graphicsLayer {
+                            rotationZ = if (isDragging) -5f else 0f
+                        }
+                ) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Delete",
+                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                    )
+                }
             }
         }
     }
@@ -905,112 +846,63 @@ fun AddEditEventDialog(
         initialSelectedDateMillis = dateMillis
     )
 
-    // Animation states
-    var isDialogVisible by remember { mutableStateOf(false) }
-    val dialogScale by animateFloatAsState(
-        targetValue = if (isDialogVisible) 1f else 0.8f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "dialogScale"
-    )
-    val dialogAlpha by animateFloatAsState(
-        targetValue = if (isDialogVisible) 1f else 0f,
-        animationSpec = tween(300),
-        label = "dialogAlpha"
-    )
-
-    LaunchedEffect(Unit) {
-        isDialogVisible = true
-    }
-
     AlertDialog(
-        onDismissRequest = {
-            isDialogVisible = false
-            onDismiss()
-        },
-        modifier = Modifier
-            .graphicsLayer {
-                scaleX = dialogScale
-                scaleY = dialogScale
-                alpha = dialogAlpha
-            },
-        shape = RoundedCornerShape(24.dp),
+        onDismissRequest = onDismiss,
         title = {
             Text(
-                if (initialEvent == null) "Add Event" else "Edit Event",
+                if (initialEvent == null) "Add New Event" else "Edit Event",
                 style = MaterialTheme.typography.headlineSmall
             )
         },
         text = {
             Column(
-                Modifier
-                    .padding(vertical = 8.dp)
-                    .animateContentSize()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
             ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Name") },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                    )
+                    label = { Text("Event Name") },
+                    modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(12.dp))
-                Text("Type:", style = MaterialTheme.typography.titleMedium)
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(start = 8.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clickable { isBirthday = true }
-                            .padding(4.dp)
-                    ) {
-                        RadioButton(
+                    Text("Type:", style = MaterialTheme.typography.bodyLarge)
+                    Row {
+                        FilterChip(
                             selected = isBirthday,
                             onClick = { isBirthday = true },
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = MaterialTheme.colorScheme.primary,
-                                unselectedColor = MaterialTheme.colorScheme.outline
-                            )
+                            label = { Text("Birthday") }
                         )
-                        Text("Birthday")
-                    }
-                    Spacer(Modifier.width(16.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clickable { isBirthday = false }
-                            .padding(4.dp)
-                    ) {
-                        RadioButton(
+                        Spacer(modifier = Modifier.width(8.dp))
+                        FilterChip(
                             selected = !isBirthday,
                             onClick = { isBirthday = false },
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = MaterialTheme.colorScheme.primary,
-                                unselectedColor = MaterialTheme.colorScheme.outline
-                            )
+                            label = { Text("Event") }
                         )
-                        Text("Event")
                     }
                 }
-                Spacer(Modifier.height(12.dp))
-                val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                Button(
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                OutlinedButton(
                     onClick = { showDatePicker = true },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Pick Date: ${sdf.format(Date(dateMillis))}")
+                    Text(
+                        SimpleDateFormat("MMMM d, yyyy", Locale.getDefault())
+                            .format(Date(dateMillis))
+                    )
                 }
-                Spacer(Modifier.height(12.dp))
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
                 ColorIconPicker(
                     selectedColor = selectedColor,
                     onColorSelected = { selectedColor = it },
@@ -1036,11 +928,7 @@ fun AddEditEventDialog(
                     } else {
                         Toast.makeText(context, "Name cannot be empty", Toast.LENGTH_SHORT).show()
                     }
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                )
+                }
             ) {
                 Text("Save")
             }
@@ -1060,10 +948,7 @@ fun AddEditEventDialog(
                     Spacer(Modifier.width(8.dp))
                 }
                 Button(
-                    onClick = {
-                        isDialogVisible = false
-                        onDismiss()
-                    },
+                    onClick = onDismiss,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
                         contentColor = MaterialTheme.colorScheme.onSecondaryContainer
@@ -1109,112 +994,53 @@ fun ColorIconPicker(
     onIconSelected: (String) -> Unit
 ) {
     Column {
-        Text(
-            "Pick a color:",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
+        Text("Pick a color:", style = MaterialTheme.typography.bodyLarge)
         Row(
-            modifier = Modifier
-                .padding(vertical = 8.dp)
-                .animateContentSize()
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             colorOptions.forEach { color ->
-                var isHovered by remember { mutableStateOf(false) }
-                val scale by animateFloatAsState(
-                    targetValue = if (isHovered) 1.1f else 1f,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessLow
-                    ),
-                    label = "colorScale"
-                )
                 Box(
-                    Modifier
-                        .size(32.dp)
-                        .padding(4.dp)
-                        .graphicsLayer {
-                            scaleX = scale
-                            scaleY = scale
-                        }
+                    modifier = Modifier
+                        .size(40.dp)
                         .background(color, CircleShape)
                         .border(
                             width = if (color == selectedColor) 2.dp else 0.dp,
-                            color = if (color == selectedColor) MaterialTheme.colorScheme.primary else Color.Transparent,
+                            color = MaterialTheme.colorScheme.primary,
                             shape = CircleShape
                         )
-                        .pointerInput(Unit) {
-                            detectTapGestures(
-                                onTap = { onColorSelected(color) },
-                                onPress = {
-                                    isHovered = true
-                                    tryAwaitRelease()
-                                    isHovered = false
-                                }
-                            )
-                        }
+                        .clickable { onColorSelected(color) }
                 )
             }
         }
-        Spacer(Modifier.height(16.dp))
-        Text(
-            "Pick an icon:",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        Text("Pick an icon:", style = MaterialTheme.typography.bodyLarge)
         Row(
-            modifier = Modifier
-                .padding(vertical = 8.dp)
-                .animateContentSize()
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             iconNames.forEach { iconName ->
-                var isHovered by remember { mutableStateOf(false) }
-                val scale by animateFloatAsState(
-                    targetValue = if (isHovered) 1.1f else 1f,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessLow
-                    ),
-                    label = "iconScale"
-                )
-                val rotation by animateFloatAsState(
-                    targetValue = if (isHovered) 10f else 0f,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessLow
-                    ),
-                    label = "iconRotation"
-                )
-                val icon = iconMap[iconName] ?: Icons.Default.Cake
-                Box(
-                    Modifier
-                        .size(40.dp)
-                        .padding(4.dp)
-                        .graphicsLayer {
-                            scaleX = scale
-                            scaleY = scale
-                            rotationZ = rotation
-                        }
+                IconButton(
+                    onClick = { onIconSelected(iconName) },
+                    modifier = Modifier
+                        .size(48.dp)
                         .background(
-                            if (iconName == selectedIcon) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                            if (iconName == selectedIcon) 
+                                MaterialTheme.colorScheme.primaryContainer 
+                            else 
+                                Color.Transparent,
                             CircleShape
                         )
-                        .pointerInput(Unit) {
-                            detectTapGestures(
-                                onTap = { onIconSelected(iconName) },
-                                onPress = {
-                                    isHovered = true
-                                    tryAwaitRelease()
-                                    isHovered = false
-                                }
-                            )
-                        },
-                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        icon,
+                        iconMap[iconName] ?: Icons.Default.Event,
                         contentDescription = iconName,
-                        tint = if (iconName == selectedIcon) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = if (iconName == selectedIcon) 
+                            MaterialTheme.colorScheme.primary 
+                        else 
+                            MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
@@ -1222,29 +1048,20 @@ fun ColorIconPicker(
     }
 }
 
-fun getYearsAndDaysSince(pastDate: Long, now: Long): Pair<Int, Int> {
-    val fromCal = Calendar.getInstance().apply { timeInMillis = pastDate }
-    val toCal = Calendar.getInstance().apply { timeInMillis = now }
-
-    var years = toCal.get(Calendar.YEAR) - fromCal.get(Calendar.YEAR)
-    var days = toCal.get(Calendar.DAY_OF_YEAR) - fromCal.get(Calendar.DAY_OF_YEAR)
-
+fun getYearsAndDaysSince(eventDate: Long, now: Long): Pair<Int, Int> {
+    val eventCal = Calendar.getInstance().apply { timeInMillis = eventDate }
+    val nowCal = Calendar.getInstance().apply { timeInMillis = now }
+    
+    var years = nowCal.get(Calendar.YEAR) - eventCal.get(Calendar.YEAR)
+    var days = nowCal.get(Calendar.DAY_OF_YEAR) - eventCal.get(Calendar.DAY_OF_YEAR)
+    
     if (days < 0) {
-        years -= 1
-        // Create a calendar for the current year, but at the original event's month/day
-        val tempFromCal = Calendar.getInstance().apply {
-            timeInMillis = fromCal.timeInMillis
-            set(Calendar.YEAR, toCal.get(Calendar.YEAR))
-        }
-
-        // If the event's date in the *current* year is still in the future,
-        // then the "years since" calculation needs to consider the previous year
-        if (tempFromCal.timeInMillis > toCal.timeInMillis) {
-            tempFromCal.add(Calendar.YEAR, -1) // Go back to previous year for calculation
-        }
-        days = TimeUnit.MILLISECONDS.toDays(toCal.timeInMillis - tempFromCal.timeInMillis).toInt()
+        years--
+        eventCal.add(Calendar.YEAR, 1)
+        days = ((nowCal.timeInMillis - eventCal.timeInMillis) / (1000 * 60 * 60 * 24)).toInt()
     }
-    return years to days
+    
+    return Pair(years, days)
 }
 
 fun getDaysUntilNextOccurrence(eventDate: Long, now: Long): Int {
@@ -1255,7 +1072,6 @@ fun getDaysUntilNextOccurrence(eventDate: Long, now: Long): Int {
     eventCal.set(Calendar.YEAR, nowCal.get(Calendar.YEAR))
 
     // If the event for this year has passed, set it to next year
-    // Check if the current time has gone past the event date in the current year
     if (eventCal.timeInMillis < nowCal.timeInMillis) {
         // Exception: if it's the exact same day (e.g., event was earlier today), it's 0 days
         val isSameDay = eventCal.get(Calendar.DAY_OF_YEAR) == nowCal.get(Calendar.DAY_OF_YEAR) &&
@@ -1266,11 +1082,19 @@ fun getDaysUntilNextOccurrence(eventDate: Long, now: Long): Int {
     }
 
     val diffMillis = eventCal.timeInMillis - nowCal.timeInMillis
+    return TimeUnit.MILLISECONDS.toDays(diffMillis).toInt()
+}
 
-    return when {
-        diffMillis <= 0L -> 0 // Today or already passed for the current year.
-        else -> TimeUnit.MILLISECONDS.toDays(diffMillis).toInt() +
-                // Add 1 if there's a remainder, meaning it's less than a full day until
-                if (diffMillis % (1000 * 60 * 60 * 24) > 0) 1 else 0
-    }
+@OptIn(ExperimentalFoundationApi::class) // <--- This is the line causing the error
+@Composable
+fun EventList(
+    events: List<Event>,
+    onEventClick: (Event) -> Unit,
+    onEventDelete: (Event) -> Unit,
+    onEventEdit: (Event) -> Unit,
+    onEventMove: (Int, Int) -> Unit,
+    sortMode: SortMode,
+    modifier: Modifier = Modifier
+) {
+    // Implementation of EventList composable
 }
