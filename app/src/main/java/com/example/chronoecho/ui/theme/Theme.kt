@@ -1,4 +1,4 @@
-package com.example.birthdayevents.ui.theme
+package com.silentninja.chronoecho.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme

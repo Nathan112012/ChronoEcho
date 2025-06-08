@@ -45,6 +45,9 @@ import com.google.gson.reflect.TypeToken
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.work.*
 import android.Manifest
+import com.example.chronoecho.AppWithSplashScreen
+import com.example.chronoecho.Event
+import com.example.chronoecho.EventNotificationWorker
 import org.burnoutcrew.reorderable.*
 
 val Context.dataStore by preferencesDataStore(name = "events")
@@ -205,12 +208,12 @@ enum class SortMode(val displayName: String) {
     Custom("Custom")
 }
 
-fun sortEvents(events: List<Event>, mode: SortMode): List<Event> {
+fun sortEvents(events: List<Event>, mode: com.example.chronoecho.SortMode): List<Event> {
     return when (mode) {
-        SortMode.Closest -> events.sortedBy { it.date }
-        SortMode.Farthest -> events.sortedByDescending { it.date }
-        SortMode.MostRecent -> events.sortedByDescending { it.date }
-        SortMode.Custom -> events
+        com.example.chronoecho.SortMode.Closest -> events.sortedBy { it.date }
+        com.example.chronoecho.SortMode.Farthest -> events.sortedByDescending { it.date }
+        com.example.chronoecho.SortMode.MostRecent -> events.sortedByDescending { it.date }
+        com.example.chronoecho.SortMode.Custom -> events
     }
 }
 
@@ -218,17 +221,17 @@ fun sortEvents(events: List<Event>, mode: SortMode): List<Event> {
 @Composable
 fun BirthdayEventApp() {
     val context = LocalContext.current
-    var events by remember { mutableStateOf(loadEvents(context)) }
+    var events by remember { mutableStateOf(com.example.chronoecho.loadEvents(context)) }
     var showDialog by remember { mutableStateOf(false) }
     var editEvent by remember { mutableStateOf<Event?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     val snackbarHostState = remember { SnackbarHostState() }
     var recentlyDeletedEvent by remember { mutableStateOf<Event?>(null) }
     val scope = rememberCoroutineScope()
-    var sortMode by remember { mutableStateOf(SortMode.Custom) }
+    var sortMode by remember { mutableStateOf(com.example.chronoecho.SortMode.Custom) }
 
     // Save events on change
-    LaunchedEffect(events) { saveEvents(context, events) }
+    LaunchedEffect(events) { com.example.chronoecho.saveEvents(context, events) }
 
     // Filtered and sorted events
     val filteredEvents = sortEvents(
@@ -237,7 +240,7 @@ fun BirthdayEventApp() {
     )
 
     val reorderState = rememberReorderableLazyListState(onMove = { from, to ->
-        if (sortMode == SortMode.Custom) {
+        if (sortMode == com.example.chronoecho.SortMode.Custom) {
             events = events.toMutableList().apply { add(to.index, removeAt(from.index)) }
         }
     })
@@ -284,7 +287,7 @@ fun BirthdayEventApp() {
                     }
                 }
             } else {
-                if (sortMode == SortMode.Custom) {
+                if (sortMode == com.example.chronoecho.SortMode.Custom) {
                     LazyColumn(
                         state = reorderState.listState,
                         modifier = Modifier.reorderable(reorderState)
@@ -382,14 +385,14 @@ fun BirthdayEventApp() {
 }
 
 @Composable
-fun SortMenu(sortMode: SortMode, onSortChange: (SortMode) -> Unit) {
+fun SortMenu(sortMode: com.example.chronoecho.SortMode, onSortChange: (com.example.chronoecho.SortMode) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         FilledTonalButton(onClick = { expanded = true }) {
             Text("Sort: ${sortMode.displayName}")
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            SortMode.values().forEach { mode ->
+            com.example.chronoecho.SortMode.values().forEach { mode ->
                 DropdownMenuItem(
                     text = { Text(mode.displayName) },
                     onClick = {
@@ -601,7 +604,7 @@ fun AddEditEventDialog(
                 onClick = {
                     if (name.text.isNotBlank()) {
                         onSave(
-                            Event(
+                            com.example.chronoecho.Event(
                                 name.text,
                                 dateMillis,
                                 isBirthday,
