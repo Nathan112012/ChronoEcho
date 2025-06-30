@@ -61,6 +61,7 @@ import org.burnoutcrew.reorderable.reorderable
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
+import org.burnoutcrew.reorderable.detectReorder
 
 val Context.dataStore by preferencesDataStore(name = "events")
 val EVENTS_KEY = stringPreferencesKey("events_json")
@@ -426,47 +427,22 @@ fun BirthdayEventApp() {
             if (filteredEvents.isEmpty() && searchQuery.isBlank()) {
                 EmptyState()
             } else {
-                if (sortMode == SortMode.Custom) {
-                    LazyColumn(
-                        state = reorderState.listState,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .reorderable(reorderState),
-                        contentPadding = PaddingValues(bottom = 80.dp)
-                    ) {
-                        items(filteredEvents, key = { it.id }) { event ->
-                            ReorderableItem(reorderState, key = event.id) { isDragging ->
-                                EventCard(
-                                    event = event,
-                                    onCardClick = {
-                                        eventToEdit = event
-                                        showAddEditDialog = true
-                                    },
-                                    dragHandle = {
-                                        Icon(
-                                            Icons.Default.DragHandle,
-                                            contentDescription = "Drag to reorder",
-                                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                            modifier = Modifier
-                                                .size(24.dp)
-                                                .pointerInput(Unit) {
-                                                    detectTapGestures { /* consume taps */ }
-                                                }
-                                        )
-                                    },
-                                    isDragging = isDragging
-                                )
-                            }
-                        }
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 80.dp)
-                    ) {
-                        items(filteredEvents, key = { it.id }) { event ->
+                LazyColumn(
+                    state = reorderState.listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (sortMode == SortMode.Custom) Modifier.reorderable(reorderState)
+                            else Modifier
+                        ),
+                    contentPadding = PaddingValues(bottom = 80.dp)
+                ) {
+                    items(filteredEvents, key = { it.id }) { event ->
+                        // FIX: Replaced previous ReorderableItem implementation
+                        ReorderableItem(reorderState, key = event.id) { isDragging ->
                             SwipeableEventCard(
                                 event = event,
+                                isDragging = isDragging,
                                 onEdit = {
                                     eventToEdit = event
                                     showAddEditDialog = true
@@ -474,6 +450,17 @@ fun BirthdayEventApp() {
                                 onDeleteRequest = {
                                     eventToDelete = event
                                     showDeleteConfirmation = true
+                                },
+                                // FIX: The 'if' condition is now INSIDE the composable lambda
+                                dragHandle = {
+                                    if (sortMode == SortMode.Custom) {
+                                        Icon(
+                                            Icons.Default.DragHandle,
+                                            contentDescription = "Drag to reorder",
+                                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                            modifier = Modifier.detectReorder(reorderState)
+                                        )
+                                    }
                                 }
                             )
                         }
@@ -483,7 +470,6 @@ fun BirthdayEventApp() {
         }
     }
 }
-
 @Composable
 fun SortMenuButton(currentMode: SortMode, onModeSelected: (SortMode) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
@@ -839,7 +825,9 @@ fun getDaysUntilNextOccurrence(eventDate: Long, now: Long): Int {
 fun SwipeableEventCard(
     event: Event,
     onEdit: () -> Unit,
-    onDeleteRequest: () -> Unit
+    onDeleteRequest: () -> Unit,
+    isDragging: Boolean = false,
+    dragHandle: (@Composable () -> Unit)? = null
 ) {
     val scope = rememberCoroutineScope()
     val dismissState = rememberSwipeToDismissBoxState(
@@ -910,13 +898,14 @@ fun SwipeableEventCard(
             }
         }
     ) {
-        EventCard(event = event)
+        EventCard(
+            event = event,
+            dragHandle = dragHandle,
+            isDragging = isDragging
+        )
     }
 }
 
-/**
- * A dialog to confirm deletion of an event.
- */
 @Composable
 fun DeletionConfirmationDialog(
     eventName: String,
