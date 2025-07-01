@@ -14,7 +14,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,10 +26,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -55,9 +54,9 @@ import org.burnoutcrew.reorderable.reorderable
 import java.text.SimpleDateFormat
 import java.time.Instant
 import java.time.LocalDate
+import java.time.Period
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
 import java.util.*
 import java.util.concurrent.TimeUnit
 
@@ -66,15 +65,16 @@ val EVENTS_KEY = stringPreferencesKey("events_json")
 val SORT_MODE_KEY = stringPreferencesKey("sort_mode")
 val gson = Gson()
 
+// MODIFIED: The 'color' property has been removed.
 data class Event(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
     val date: Long,
     val isBirthday: Boolean,
-    val color: Int,
     val icon: String
 )
 
+// MODIFIED: Reverted to use standard Material ImageVectors
 val iconMap = mapOf(
     "Cake" to Icons.Default.Cake,
     "Star" to Icons.Default.Star,
@@ -83,59 +83,33 @@ val iconMap = mapOf(
 )
 val iconNames = iconMap.keys.toList()
 
-val colorOptions = listOf(
-    Color(0xFFB2EBF2), // Light Cyan
-    Color(0xFFD7CCC8), // Soft Taupe
-    Color(0xFFC8E6C9), // Muted Green
-    Color(0xFFCFD8DC), // Blue Grey
-    Color(0xFFFFD180), // Pale Orange
-    Color(0xFFD1C4E9)  // Soft Lavender
-)
-
-fun formatEventTime(event: Event): Pair<String, String> {
+// This function now provides the text for the gray "pill" in the new design.
+fun formatEventDetailText(event: Event): String {
     val now = LocalDate.now()
     val eventDate = Instant.ofEpochMilli(event.date).atZone(ZoneId.systemDefault()).toLocalDate()
 
-    val daysUntil = getDaysUntilNextOccurrence(event.date, System.currentTimeMillis())
+    val period = Period.between(eventDate, now)
+    val years = period.years
+    val months = period.months
+    val days = period.days
 
-    // THE FIX IS HERE: Wrap the literal text 'on' in single quotes
-    val secondaryFmtModern = DateTimeFormatter.ofPattern("'on' MMMM d", Locale.getDefault())
-
-    if (event.isBirthday) {
-        val age = ChronoUnit.YEARS.between(eventDate, now).toInt()
-        val nextAge = age + 1
-
-        val nextBirthday = eventDate.withYear(now.year)
-        val finalNextBirthday = if (nextBirthday.isBefore(now)) nextBirthday.plusYears(1) else nextBirthday
-
-        return when (daysUntil) {
-            0 -> "Turns $nextAge today!" to eventDate.format(secondaryFmtModern)
-            1 -> "Turns $nextAge tomorrow!" to eventDate.format(secondaryFmtModern)
-            else -> "Turns $nextAge in $daysUntil days" to finalNextBirthday.format(secondaryFmtModern)
+    return if (event.date <= System.currentTimeMillis()) { // Birthday or past event
+        buildString {
+            if (years > 0) append("$years ${if (years == 1) "year" else "years"}, ")
+            if (months > 0) append("$months ${if (months == 1) "month" else "months"}, ")
+            append("$days ${if (days == 1) "day" else "days"}")
+            if (!event.isBirthday) append(" ago")
         }
-    } else {
-        return if (event.date > System.currentTimeMillis()) { // Future event
-            when (daysUntil) {
-                0 -> "Today" to eventDate.format(secondaryFmtModern)
-                1 -> "Tomorrow" to eventDate.format(secondaryFmtModern)
-                else -> "In $daysUntil days" to eventDate.format(secondaryFmtModern)
-            }
-        } else { // Past event
-            val years = ChronoUnit.YEARS.between(eventDate, now)
-            val months = ChronoUnit.MONTHS.between(eventDate.plusYears(years), now)
-            val days = ChronoUnit.DAYS.between(eventDate.plusYears(years).plusMonths(months), now)
-
-            val primaryText = when {
-                years > 0 -> "$years ${if (years == 1L) "year" else "years"}, $months ${if (months == 1L) "month" else "months"} ago"
-                months > 0 -> "$months ${if (months == 1L) "month" else "months"}, $days ${if (days == 1L) "day" else "days"} ago"
-                days > 0 -> "$days ${if (days == 1L) "day" else "days"} ago"
-                else -> "Earlier today"
-            }
-            // Using the old SimpleDateFormat here for the full date is fine and not causing the crash
-            primaryText to SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()).format(Date(event.date))
+    } else { // Future event
+        val daysUntil = getDaysUntilNextOccurrence(event.date, System.currentTimeMillis())
+        when (daysUntil) {
+            0 -> "Today!"
+            1 -> "Tomorrow"
+            else -> "In $daysUntil days"
         }
     }
 }
+
 
 suspend fun saveEvents(context: Context, events: List<Event>) {
     val json = gson.toJson(events)
@@ -268,8 +242,8 @@ fun SplashScreen() {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
-                    Icons.Default.CalendarMonth,
-                    contentDescription = "Calendar",
+                    Icons.Default.Cake, // Using a standard icon
+                    contentDescription = "App Icon",
                     modifier = Modifier.size(80.dp),
                     tint = color
                 )
@@ -339,7 +313,6 @@ fun BirthdayEventApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Start with a null state to represent "loading"
     var events by remember { mutableStateOf<List<Event>?>(null) }
 
     var showAddEditDialog by remember { mutableStateOf(false) }
@@ -351,18 +324,15 @@ fun BirthdayEventApp() {
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var eventToDelete by remember { mutableStateOf<Event?>(null) }
 
-    // Load events and sort mode on startup. When done, `events` will no longer be null.
     LaunchedEffect(Unit) {
         events = loadEvents(context)
         sortMode = loadSortMode(context)
     }
 
-    // Save sort mode whenever it changes
     LaunchedEffect(sortMode) {
         saveSortMode(context, sortMode)
     }
 
-    // This local variable is only calculated when events is not null
     val currentEvents = events
 
     val reorderState = rememberReorderableLazyListState(
@@ -376,7 +346,6 @@ fun BirthdayEventApp() {
     )
 
     val filteredEvents = remember(currentEvents, sortMode) {
-        // Only sort if the list is not null
         currentEvents?.let { sortEvents(it, sortMode) } ?: emptyList()
     }
 
@@ -479,7 +448,6 @@ fun BirthdayEventApp() {
                                 }
                                 if (result == SnackbarResult.ActionPerformed) {
                                     recentlyDeletedEvent?.let { (deletedEvent, index) ->
-                                        // This check is important inside a coroutine
                                         val eventsNow = events
                                         if (eventsNow != null) {
                                             val restoredEvents = eventsNow.toMutableList().apply { add(index, deletedEvent) }
@@ -502,19 +470,15 @@ fun BirthdayEventApp() {
                 )
             }
 
-            // Handle all three states: loading, empty, and has-data
             when {
-                // State 1: Loading
                 currentEvents == null -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
                 }
-                // State 2: Loaded but empty
                 currentEvents.isEmpty() -> {
                     EmptyState()
                 }
-                // State 3: Loaded and has data
                 else -> {
                     LazyColumn(
                         state = reorderState.listState,
@@ -524,7 +488,7 @@ fun BirthdayEventApp() {
                                 if (sortMode == SortMode.Custom) Modifier.reorderable(reorderState)
                                 else Modifier
                             ),
-                        contentPadding = PaddingValues(bottom = 80.dp)
+                        contentPadding = PaddingValues(top = 8.dp, bottom = 80.dp)
                     ) {
                         items(filteredEvents, key = { it.id }) { event ->
                             ReorderableItem(reorderState, key = event.id) { isDragging ->
@@ -596,6 +560,7 @@ fun SortMenuButton(currentMode: SortMode, onModeSelected: (SortMode) -> Unit) {
     }
 }
 
+// NEW `EventCard` composable to match the design
 @Composable
 fun EventCard(
     event: Event,
@@ -604,16 +569,16 @@ fun EventCard(
     dragHandle: (@Composable () -> Unit)? = null,
     isDragging: Boolean = false
 ) {
-    val cardColor = Color(event.color)
     val elevation by animateDpAsState(if (isDragging) 12.dp else 4.dp, label = "elevation_anim")
     val scale by animateFloatAsState(if (isDragging) 1.05f else 1f, label = "scale_anim")
-    val icon = iconMap[event.icon] ?: Icons.Default.Cake
 
-    val (primaryText, secondaryText) = formatEventTime(event)
+    val detailText = formatEventDetailText(event)
+    val fullDate = Instant.ofEpochMilli(event.date).atZone(ZoneId.systemDefault()).toLocalDate()
+        .format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault()))
 
     val cardModifier = modifier
         .fillMaxWidth()
-        .padding(horizontal = 16.dp, vertical = 8.dp)
+        .padding(horizontal = 16.dp, vertical = 6.dp)
         .graphicsLayer {
             scaleX = scale
             scaleY = scale
@@ -624,63 +589,59 @@ fun EventCard(
     ElevatedCard(
         modifier = cardModifier,
         elevation = CardDefaults.cardElevation(defaultElevation = elevation),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = cardColor)
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(
-                    icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(32.dp)
-                )
-                Spacer(Modifier.width(16.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        event.name,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = if (event.isBirthday) "Birthday" else "Event",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                dragHandle?.let {
-                    Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) { it() }
-                }
-            }
+            // Left: Icon
+            Icon(
+                imageVector = iconMap[event.icon] ?: Icons.Default.Event,
+                contentDescription = event.name,
+                modifier = Modifier.size(56.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
 
-            Divider(modifier = Modifier.padding(vertical = 12.dp), thickness = 0.5.dp)
+            Spacer(Modifier.width(16.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+            // Right: Text content
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = primaryText,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
+                    text = event.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = secondaryText,
+                    text = fullDate,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(Modifier.height(4.dp))
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                ) {
+                    Text(
+                        text = detailText,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            // Drag handle on the far right if present
+            dragHandle?.let {
+                Box(contentAlignment = Alignment.Center) { it() }
             }
         }
     }
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -694,7 +655,6 @@ fun AddEditEventDialog(
     var isBirthday by remember { mutableStateOf(initialEvent?.isBirthday ?: true) }
     var dateMillis by remember { mutableStateOf(initialEvent?.date ?: System.currentTimeMillis()) }
     var showDatePicker by remember { mutableStateOf(false) }
-    var selectedColor by remember { mutableStateOf(initialEvent?.color?.let { Color(it) } ?: colorOptions.first()) }
     var selectedIcon by remember { mutableStateOf(initialEvent?.icon ?: iconNames.first()) }
     val context = LocalContext.current
 
@@ -735,9 +695,7 @@ fun AddEditEventDialog(
                             Text(SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()).format(Date(dateMillis)))
                         }
                         Spacer(Modifier.height(16.dp))
-                        ColorIconPicker(
-                            selectedColor = selectedColor,
-                            onColorSelected = { selectedColor = it },
+                        IconPicker(
                             selectedIcon = selectedIcon,
                             onIconSelected = { selectedIcon = it }
                         )
@@ -749,14 +707,15 @@ fun AddEditEventDialog(
             Button(
                 onClick = {
                     if (name.isNotBlank()) {
-                        onSave(Event(
-                            id = initialEvent?.id ?: UUID.randomUUID().toString(),
-                            name = name,
-                            date = dateMillis,
-                            isBirthday = isBirthday,
-                            color = selectedColor.toArgb(),
-                            icon = selectedIcon
-                        ))
+                        onSave(
+                            Event(
+                                id = initialEvent?.id ?: UUID.randomUUID().toString(),
+                                name = name,
+                                date = dateMillis,
+                                isBirthday = isBirthday,
+                                icon = selectedIcon
+                            )
+                        )
                     } else {
                         Toast.makeText(context, "Name cannot be empty", Toast.LENGTH_SHORT).show()
                     }
@@ -791,48 +750,31 @@ fun AddEditEventDialog(
     }
 }
 
+// Simplified Icon Picker without color options
 @Composable
-fun ColorIconPicker(
-    selectedColor: Color,
-    onColorSelected: (Color) -> Unit,
+fun IconPicker(
     selectedIcon: String,
     onIconSelected: (String) -> Unit
 ) {
     Column {
-        Text("Color", style = MaterialTheme.typography.labelLarge)
-        Spacer(Modifier.height(8.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            colorOptions.forEach { color ->
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .background(color, CircleShape)
-                        .border(
-                            width = if (color == selectedColor) 2.dp else 0.dp,
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = CircleShape
-                        )
-                        .clickable { onColorSelected(color) }
-                )
-            }
-        }
-        Spacer(Modifier.height(16.dp))
         Text("Icon", style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.height(8.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
             iconNames.forEach { iconName ->
-                IconButton(
-                    onClick = { onIconSelected(iconName) },
+                Box(
                     modifier = Modifier
-                        .size(48.dp)
+                        .size(56.dp)
+                        .clip(CircleShape)
                         .background(
                             if (iconName == selectedIcon) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                            CircleShape
                         )
+                        .clickable { onIconSelected(iconName) },
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        iconMap[iconName] ?: Icons.Default.Event,
+                        imageVector = iconMap[iconName]!!,
                         contentDescription = iconName,
+                        modifier = Modifier.size(36.dp),
                         tint = if (iconName == selectedIcon) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -916,8 +858,9 @@ fun SwipeableEventCard(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .background(color, shape = RoundedCornerShape(16.dp))
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(color)
                     .padding(horizontal = 20.dp),
                 contentAlignment = alignment
             ) {
