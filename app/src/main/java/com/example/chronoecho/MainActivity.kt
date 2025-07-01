@@ -103,9 +103,9 @@ fun formatEventDetailText(event: Event): Pair<String, String?> {
     val days = period.days
 
     val ageString = buildString {
-        if (years > 0) append("$years ${if (years == 1) \"year\" else \"years\"}, ")
-        if (months > 0) append("$months ${if (months == 1) \"month\" else \"months\"}, ")
-        append("$days ${if (days == 1) \"day\" else \"days\"}")
+        if (years > 0) append("$years ${if (years == 1) "year" else "years"}, ")
+        if (months > 0) append("$months ${if (months == 1) "month" else "months"}, ")
+        append("$days ${if (days == 1) "day" else "days"}")
     }
 
     // Determine if the event is close (today, tomorrow, or within 7 days)
