@@ -379,6 +379,11 @@ fun BirthdayEventApp() {
     }
 
     val eventsList = events
+    val displayedEvents = when (sortMode) {
+        SortMode.Custom -> eventsList ?: emptyList()
+        else -> filteredEvents
+    }
+
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -519,7 +524,6 @@ fun BirthdayEventApp() {
                     EmptyState()
                 }
                 else -> {
-                    val displayedEvents = if (sortMode == SortMode.Custom) eventsList else filteredEvents
                     LazyColumn(
                         state = reorderState.listState,
                         modifier = Modifier
@@ -528,15 +532,21 @@ fun BirthdayEventApp() {
                                 if (sortMode == SortMode.Custom) Modifier.reorderable(reorderState)
                                 else Modifier
                             ),
-                        contentPadding = PaddingValues(top = 8.dp, bottom = 80.dp)
+                        contentPadding = PaddingValues(bottom = 80.dp)
                     ) {
                         items(displayedEvents, key = { it.id }) { event ->
                             ReorderableItem(reorderState, key = event.id) { isDragging ->
                                 SwipeableEventCard(
                                     event = event,
                                     isDragging = isDragging,
-                                    onEdit = { eventToEdit = event; showAddEditDialog = true },
-                                    onDeleteRequest = { eventToDelete = event; showDeleteConfirmation = true },
+                                    onEdit = {
+                                        eventToEdit = event
+                                        showAddEditDialog = true
+                                    },
+                                    onDeleteRequest = {
+                                        eventToDelete = event
+                                        showDeleteConfirmation = true
+                                    },
                                     dragHandle = {
                                         if (sortMode == SortMode.Custom) {
                                             Icon(
