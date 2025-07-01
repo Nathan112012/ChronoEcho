@@ -94,30 +94,29 @@ val iconMap = mapOf(
 )
 val iconNames = iconMap.keys.toList()
 
-fun formatEventDetailText(event: Event): String {
+fun formatEventDetailText(event: Event): Pair<String, String?> {
     val now = LocalDate.now()
     val eventDate = Instant.ofEpochMilli(event.date).atZone(ZoneId.systemDefault()).toLocalDate()
-
     val period = Period.between(eventDate, now)
     val years = period.years
     val months = period.months
     val days = period.days
 
-    return if (event.date <= System.currentTimeMillis()) { // Birthday or past event
-        buildString {
-            if (years > 0) append("$years ${if (years == 1) "year" else "years"}, ")
-            if (months > 0) append("$months ${if (months == 1) "month" else "months"}, ")
-            append("$days ${if (days == 1) "day" else "days"}")
-            if (!event.isBirthday) append(" ago")
-        }
-    } else { // Future event
-        val daysUntil = getDaysUntilNextOccurrence(event.date, System.currentTimeMillis())
-        when (daysUntil) {
-            0 -> "Today!"
-            1 -> "Tomorrow"
-            else -> "In $daysUntil days"
-        }
+    val ageString = buildString {
+        if (years > 0) append("$years ${if (years == 1) \"year\" else \"years\"}, ")
+        if (months > 0) append("$months ${if (months == 1) \"month\" else \"months\"}, ")
+        append("$days ${if (days == 1) \"day\" else \"days\"}")
     }
+
+    // Determine if the event is close (today, tomorrow, or within 7 days)
+    val daysUntil = getDaysUntilNextOccurrence(event.date, System.currentTimeMillis())
+    val closeMsg = when (daysUntil) {
+        0 -> "Today!"
+        1 -> "Tomorrow"
+        in 2..7 -> "In $daysUntil days"
+        else -> null
+    }
+    return Pair(ageString, closeMsg)
 }
 
 suspend fun saveEvents(context: Context, events: List<Event>) {
@@ -369,19 +368,28 @@ fun BirthdayEventApp() {
             )
         },
         floatingActionButton = {
-            LargeFloatingActionButton(
-                onClick = {
-                    eventToEdit = null
-                    showAddEditDialog = true
-                }
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.BottomCenter
             ) {
-                Icon(
-                    Icons.Default.Add,
-                    contentDescription = "Add Event",
-                    modifier = Modifier.size(36.dp)
-                )
+                FloatingActionButton(
+                    onClick = {
+                        eventToEdit = null
+                        showAddEditDialog = true
+                    },
+                    shape = CircleShape,
+                    containerColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = "Add Event",
+                        modifier = Modifier.size(32.dp),
+                        tint = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
             }
         },
+        floatingActionButtonPosition = FabPosition.Center,
         snackbarHost = {
             SnackbarHost(snackbarHostState) { data ->
                 Snackbar(
@@ -529,10 +537,8 @@ fun BirthdayEventApp() {
 fun SortMenuButton(currentMode: SortMode, onModeSelected: (SortMode) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        TextButton(onClick = { expanded = true }) {
+        IconButton(onClick = { expanded = true }) {
             Icon(Icons.Default.Sort, contentDescription = "Sort")
-            Spacer(Modifier.width(4.dp))
-            Text(currentMode.name.replace("_", " "))
         }
         DropdownMenu(
             expanded = expanded,
@@ -585,7 +591,7 @@ fun EventCard(
         label = "border_anim"
     )
 
-    val detailText = formatEventDetailText(event)
+    val (ageText, closeMsg) = formatEventDetailText(event)
     val fullDate = Instant.ofEpochMilli(event.date).atZone(ZoneId.systemDefault()).toLocalDate()
         .format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault()))
 
@@ -626,25 +632,35 @@ fun EventCard(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                // yyyy mm dd NOT in a pill
+                // yyyy mm dd always shown
                 Text(
                     text = fullDate,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(4.dp))
-                // Only the detail text is in a pill
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f)
-                ) {
-                    Text(
-                        text = detailText,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                // Age as plain text, not in a bubble
+                Text(
+                    text = ageText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.SemiBold
+                )
+                // If close, show a separate bubble
+                if (closeMsg != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.95f)
+                    ) {
+                        Text(
+                            text = closeMsg,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
             // Drag handle on the far right if present
