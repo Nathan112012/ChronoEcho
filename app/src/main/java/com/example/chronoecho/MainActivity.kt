@@ -658,27 +658,35 @@ fun EventCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(4.dp))
-                // Age as plain text, not in a bubble
-                Text(
-                    text = ageText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.SemiBold
-                )
-                // If close, show a separate bubble
-                if (closeMsg != null) {
-                    Spacer(Modifier.height(4.dp))
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.95f)
-                    ) {
-                        Text(
-                            text = closeMsg,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            color = MaterialTheme.colorScheme.onTertiaryContainer,
-                            fontWeight = FontWeight.Bold
-                        )
+                // Age and closeMsg in a row, always reserving space for the bubble
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(IntrinsicSize.Min)) {
+                    Text(
+                        text = ageText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    if (closeMsg != null) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.95f)
+                        ) {
+                            Text(
+                                text = closeMsg,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    } else {
+                        // Invisible placeholder bubble to reserve space
+                        Box(
+                            modifier = Modifier
+                                .height(32.dp)
+                                .widthIn(min = 60.dp)
+                        ) {}
                     }
                 }
             }
