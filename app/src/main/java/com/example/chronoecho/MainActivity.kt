@@ -81,16 +81,35 @@ data class Event(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
     val date: Long,
-    val isBirthday: Boolean,
     val icon: String,
-    val color: Long // Now required, not nullable
-)
+    val color: Long
+) {
+    val isBirthday: Boolean get() = icon == "Cake"
+}
 
 val iconMap = mapOf(
-    "Cake" to Icons.Default.Cake,
+    "Cake" to Icons.Default.Cake, // Birthday
+    "Event" to Icons.Default.Event,
     "Star" to Icons.Default.Star,
     "Favorite" to Icons.Default.Favorite,
-    "Event" to Icons.Default.Event
+    "School" to Icons.Default.School,
+    "Work" to Icons.Default.Work,
+    "Sports" to Icons.Default.SportsSoccer,
+    "Music" to Icons.Default.MusicNote,
+    "Travel" to Icons.Default.Flight,
+    "Party" to Icons.Default.Celebration,
+    "Heart" to Icons.Default.FavoriteBorder,
+    "Book" to Icons.Default.MenuBook,
+    "Camera" to Icons.Default.CameraAlt,
+    "Shopping" to Icons.Default.ShoppingCart,
+    "Gift" to Icons.Default.CardGiftcard,
+    "Pet" to Icons.Default.Pets,
+    "Movie" to Icons.Default.Movie,
+    "Food" to Icons.Default.Restaurant,
+    "Car" to Icons.Default.DirectionsCar,
+    "Home" to Icons.Default.Home,
+    "Meeting" to Icons.Default.People,
+    "Calendar" to Icons.Default.CalendarToday
 )
 val iconNames = iconMap.keys.toList()
 
@@ -680,7 +699,6 @@ fun AddEditEventDialog(
     onDelete: (() -> Unit)?
 ) {
     var name by remember { mutableStateOf(initialEvent?.name ?: "") }
-    var isBirthday by remember { mutableStateOf(initialEvent?.isBirthday ?: true) }
     var dateMillis by remember { mutableStateOf(initialEvent?.date ?: System.currentTimeMillis()) }
     var showDatePicker by remember { mutableStateOf(false) }
     var selectedIcon by remember { mutableStateOf(initialEvent?.icon ?: iconNames.first()) }
@@ -704,19 +722,6 @@ fun AddEditEventDialog(
                             singleLine = true
                         )
                         Spacer(Modifier.height(16.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Type:", style = MaterialTheme.typography.bodyLarge)
-                            Row {
-                                FilterChip(selected = isBirthday, onClick = { isBirthday = true }, label = { Text("Birthday") })
-                                Spacer(Modifier.width(8.dp))
-                                FilterChip(selected = !isBirthday, onClick = { isBirthday = false }, label = { Text("Event") })
-                            }
-                        }
-                        Spacer(Modifier.height(16.dp))
                         OutlinedButton(
                             onClick = { showDatePicker = true },
                             modifier = Modifier.fillMaxWidth()
@@ -724,10 +729,47 @@ fun AddEditEventDialog(
                             Text(SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()).format(Date(dateMillis)))
                         }
                         Spacer(Modifier.height(16.dp))
-                        IconPicker(
-                            selectedIcon = selectedIcon,
-                            onIconSelected = { selectedIcon = it }
-                        )
+                        // Icon grid picker
+                        Text("Icon", style = MaterialTheme.typography.labelLarge)
+                        Spacer(Modifier.height(8.dp))
+                        val columns = 5
+                        val rows = (iconNames.size + columns - 1) / columns
+                        Column {
+                            for (row in 0 until rows) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceAround
+                                ) {
+                                    for (col in 0 until columns) {
+                                        val idx = row * columns + col
+                                        if (idx < iconNames.size) {
+                                            val iconName = iconNames[idx]
+                                            val isSelected = selectedIcon == iconName
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(48.dp)
+                                                    .clip(CircleShape)
+                                                    .background(
+                                                        if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                                                    )
+                                                    .clickable { selectedIcon = iconName },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = iconMap[iconName]!!,
+                                                    contentDescription = iconName,
+                                                    modifier = Modifier.size(32.dp),
+                                                    tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        } else {
+                                            Spacer(Modifier.size(48.dp))
+                                        }
+                                    }
+                                }
+                                Spacer(Modifier.height(8.dp))
+                            }
+                        }
                         Spacer(Modifier.height(16.dp))
                         // Color palette picker
                         Text("Color", style = MaterialTheme.typography.labelLarge)
@@ -767,7 +809,6 @@ fun AddEditEventDialog(
                                 id = initialEvent?.id ?: UUID.randomUUID().toString(),
                                 name = name,
                                 date = dateMillis,
-                                isBirthday = isBirthday,
                                 icon = selectedIcon,
                                 color = selectedColor
                             )
