@@ -59,22 +59,22 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.*
 import java.util.concurrent.TimeUnit
+import androidx.compose.foundation.border
 
 val Context.dataStore by preferencesDataStore(name = "events")
 val EVENTS_KEY = stringPreferencesKey("events_json")
 val SORT_MODE_KEY = stringPreferencesKey("sort_mode")
 val gson = Gson()
 
-// MODIFIED: The 'color' property has been removed.
 data class Event(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
     val date: Long,
     val isBirthday: Boolean,
-    val icon: String
+    val icon: String,
+    val color: Long? = null // Optional: for future per-event color
 )
 
-// MODIFIED: Reverted to use standard Material ImageVectors
 val iconMap = mapOf(
     "Cake" to Icons.Default.Cake,
     "Star" to Icons.Default.Star,
@@ -83,7 +83,6 @@ val iconMap = mapOf(
 )
 val iconNames = iconMap.keys.toList()
 
-// This function now provides the text for the gray "pill" in the new design.
 fun formatEventDetailText(event: Event): String {
     val now = LocalDate.now()
     val eventDate = Instant.ofEpochMilli(event.date).atZone(ZoneId.systemDefault()).toLocalDate()
@@ -109,7 +108,6 @@ fun formatEventDetailText(event: Event): String {
         }
     }
 }
-
 
 suspend fun saveEvents(context: Context, events: List<Event>) {
     val json = gson.toJson(events)
@@ -264,7 +262,6 @@ fun SplashScreen() {
     }
 }
 
-
 enum class SortMode { Closest, Farthest, Most_Recent, Custom }
 
 fun sortEvents(events: List<Event>, mode: SortMode): List<Event> {
@@ -333,22 +330,21 @@ fun BirthdayEventApp() {
         saveSortMode(context, sortMode)
     }
 
-    val currentEvents = events
-
     val reorderState = rememberReorderableLazyListState(
         onMove = { from, to ->
-            if (sortMode == SortMode.Custom && currentEvents != null) {
-                val reorderedEvents = currentEvents.toMutableList().apply { add(to.index, removeAt(from.index)) }
+            if (sortMode == SortMode.Custom && events != null) {
+                val reorderedEvents = events!!.toMutableList().apply { add(to.index, removeAt(from.index)) }
                 events = reorderedEvents
                 scope.launch { saveEvents(context, reorderedEvents) }
             }
         }
     )
 
-    val filteredEvents = remember(currentEvents, sortMode) {
-        currentEvents?.let { sortEvents(it, sortMode) } ?: emptyList()
+    val filteredEvents = remember(events, sortMode) {
+        events?.let { sortEvents(it, sortMode) } ?: emptyList()
     }
 
+    val eventsList = events
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -406,11 +402,11 @@ fun BirthdayEventApp() {
                     initialEvent = eventToEdit,
                     onDismiss = { showAddEditDialog = false },
                     onSave = { eventToSave ->
-                        if (currentEvents != null) {
-                            val newEvents = if (currentEvents.any { it.id == eventToSave.id }) {
-                                currentEvents.map { if (it.id == eventToSave.id) eventToSave else it }
+                        if (eventsList != null) {
+                            val newEvents = if (eventsList.any { it.id == eventToSave.id }) {
+                                eventsList.map { if (it.id == eventToSave.id) eventToSave else it }
                             } else {
-                                currentEvents + eventToSave
+                                eventsList + eventToSave
                             }
                             events = newEvents
                             scope.launch { saveEvents(context, newEvents) }
@@ -430,12 +426,12 @@ fun BirthdayEventApp() {
                 DeletionConfirmationDialog(
                     eventName = eventToDelete?.name ?: "this event",
                     onConfirm = {
-                        if (currentEvents != null && eventToDelete != null) {
+                        if (eventsList != null && eventToDelete != null) {
                             val event = eventToDelete!!
-                            val eventIndex = currentEvents.indexOf(event)
+                            val eventIndex = eventsList.indexOf(event)
                             recentlyDeletedEvent = Pair(event, eventIndex)
 
-                            val newEvents = currentEvents - event
+                            val newEvents = eventsList - event
                             events = newEvents
                             scope.launch { saveEvents(context, newEvents) }
                             WorkManager.getInstance(context).cancelUniqueWork(event.id)
@@ -471,15 +467,16 @@ fun BirthdayEventApp() {
             }
 
             when {
-                currentEvents == null -> {
+                eventsList == null -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
                 }
-                currentEvents.isEmpty() -> {
+                eventsList.isEmpty() -> {
                     EmptyState()
                 }
                 else -> {
+                    val displayedEvents = if (sortMode == SortMode.Custom) eventsList else filteredEvents
                     LazyColumn(
                         state = reorderState.listState,
                         modifier = Modifier
@@ -490,19 +487,13 @@ fun BirthdayEventApp() {
                             ),
                         contentPadding = PaddingValues(top = 8.dp, bottom = 80.dp)
                     ) {
-                        items(filteredEvents, key = { it.id }) { event ->
+                        items(displayedEvents, key = { it.id }) { event ->
                             ReorderableItem(reorderState, key = event.id) { isDragging ->
                                 SwipeableEventCard(
                                     event = event,
                                     isDragging = isDragging,
-                                    onEdit = {
-                                        eventToEdit = event
-                                        showAddEditDialog = true
-                                    },
-                                    onDeleteRequest = {
-                                        eventToDelete = event
-                                        showDeleteConfirmation = true
-                                    },
+                                    onEdit = { eventToEdit = event; showAddEditDialog = true },
+                                    onDeleteRequest = { eventToDelete = event; showDeleteConfirmation = true },
                                     dragHandle = {
                                         if (sortMode == SortMode.Custom) {
                                             Icon(
@@ -537,8 +528,14 @@ fun SortMenuButton(currentMode: SortMode, onModeSelected: (SortMode) -> Unit) {
             onDismissRequest = { expanded = false }
         ) {
             SortMode.values().forEach { mode ->
+                val isSelected = mode == currentMode
                 DropdownMenuItem(
-                    text = { Text(mode.name.replace("_", " ")) },
+                    text = {
+                        Text(
+                            mode.name.replace("_", " "),
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                    },
                     onClick = {
                         onModeSelected(mode)
                         expanded = false
@@ -551,16 +548,17 @@ fun SortMenuButton(currentMode: SortMode, onModeSelected: (SortMode) -> Unit) {
                                 SortMode.Most_Recent -> Icons.Default.Update
                                 SortMode.Custom -> Icons.Default.DragHandle
                             },
-                            contentDescription = null
+                            contentDescription = null,
+                            tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    }
+                    },
+                    modifier = if (isSelected) Modifier.background(MaterialTheme.colorScheme.secondaryContainer) else Modifier
                 )
             }
         }
     }
 }
 
-// NEW `EventCard` composable to match the design
 @Composable
 fun EventCard(
     event: Event,
@@ -569,8 +567,12 @@ fun EventCard(
     dragHandle: (@Composable () -> Unit)? = null,
     isDragging: Boolean = false
 ) {
-    val elevation by animateDpAsState(if (isDragging) 12.dp else 4.dp, label = "elevation_anim")
-    val scale by animateFloatAsState(if (isDragging) 1.05f else 1f, label = "scale_anim")
+    val elevation by animateDpAsState(if (isDragging) 16.dp else 4.dp, label = "elevation_anim")
+    val scale by animateFloatAsState(if (isDragging) 1.07f else 1f, label = "scale_anim")
+    val borderColor by animateColorAsState(
+        if (isDragging) MaterialTheme.colorScheme.primary else Color.Transparent,
+        label = "border_anim"
+    )
 
     val detailText = formatEventDetailText(event)
     val fullDate = Instant.ofEpochMilli(event.date).atZone(ZoneId.systemDefault()).toLocalDate()
@@ -583,13 +585,14 @@ fun EventCard(
             scaleX = scale
             scaleY = scale
         }
-        .then(if (isDragging) Modifier.zIndex(1f) else Modifier.zIndex(0f))
+        .then(if (isDragging) Modifier.zIndex(2f) else Modifier.zIndex(0f))
         .let { if (onCardClick != null) it.clickable { onCardClick() } else it }
+        .border(2.dp, borderColor, shape = RoundedCornerShape(50)) // pill shape and highlight
 
     ElevatedCard(
         modifier = cardModifier,
         elevation = CardDefaults.cardElevation(defaultElevation = elevation),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(50), // pill shape
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Row(
@@ -603,9 +606,7 @@ fun EventCard(
                 modifier = Modifier.size(56.dp),
                 tint = MaterialTheme.colorScheme.primary
             )
-
             Spacer(Modifier.width(16.dp))
-
             // Right: Text content
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -614,26 +615,27 @@ fun EventCard(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
+                // yyyy mm dd NOT in a pill
                 Text(
                     text = fullDate,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(4.dp))
+                // Only the detail text is in a pill
                 Surface(
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f)
                 ) {
                     Text(
                         text = detailText,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
             }
-
             // Drag handle on the far right if present
             dragHandle?.let {
                 Box(contentAlignment = Alignment.Center) { it() }
@@ -641,7 +643,6 @@ fun EventCard(
         }
     }
 }
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -750,7 +751,6 @@ fun AddEditEventDialog(
     }
 }
 
-// Simplified Icon Picker without color options
 @Composable
 fun IconPicker(
     selectedIcon: String,
