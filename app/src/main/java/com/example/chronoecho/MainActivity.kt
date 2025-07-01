@@ -60,11 +60,22 @@ import java.time.format.DateTimeFormatter
 import java.util.*
 import java.util.concurrent.TimeUnit
 import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.toArgb
 
 val Context.dataStore by preferencesDataStore(name = "events")
 val EVENTS_KEY = stringPreferencesKey("events_json")
 val SORT_MODE_KEY = stringPreferencesKey("sort_mode")
 val gson = Gson()
+
+// Add color palette for events
+val eventColorOptions = listOf(
+    Color(0xFFFFF59D), // Yellow
+    Color(0xFFB2FF59), // Green
+    Color(0xFF81D4FA), // Blue
+    Color(0xFFFFAB91), // Orange
+    Color(0xFFE1BEE7), // Purple
+    Color(0xFFFFCDD2)  // Pink
+)
 
 data class Event(
     val id: String = UUID.randomUUID().toString(),
@@ -72,7 +83,7 @@ data class Event(
     val date: Long,
     val isBirthday: Boolean,
     val icon: String,
-    val color: Long? = null // Optional: for future per-event color
+    val color: Long // Now required, not nullable
 )
 
 val iconMap = mapOf(
@@ -593,7 +604,7 @@ fun EventCard(
         modifier = cardModifier,
         elevation = CardDefaults.cardElevation(defaultElevation = elevation),
         shape = RoundedCornerShape(50), // pill shape
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = Color(event.color))
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -657,6 +668,7 @@ fun AddEditEventDialog(
     var dateMillis by remember { mutableStateOf(initialEvent?.date ?: System.currentTimeMillis()) }
     var showDatePicker by remember { mutableStateOf(false) }
     var selectedIcon by remember { mutableStateOf(initialEvent?.icon ?: iconNames.first()) }
+    var selectedColor by remember { mutableStateOf(initialEvent?.color ?: eventColorOptions.first().toArgb().toLong()) }
     val context = LocalContext.current
 
     val datePickerState = rememberDatePickerState(initialSelectedDateMillis = dateMillis)
@@ -700,6 +712,32 @@ fun AddEditEventDialog(
                             selectedIcon = selectedIcon,
                             onIconSelected = { selectedIcon = it }
                         )
+                        Spacer(Modifier.height(16.dp))
+                        // Color palette picker
+                        Text("Color", style = MaterialTheme.typography.labelLarge)
+                        Spacer(Modifier.height(8.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+                            eventColorOptions.forEach { colorOption ->
+                                val isSelected = selectedColor == colorOption.toArgb().toLong()
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(colorOption.toArgb()))
+                                        .border(
+                                            width = if (isSelected) 3.dp else 1.dp,
+                                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray,
+                                            shape = CircleShape
+                                        )
+                                        .clickable { selectedColor = colorOption.toArgb().toLong() },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isSelected) {
+                                        Icon(Icons.Default.Check, contentDescription = "Selected", tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -714,7 +752,8 @@ fun AddEditEventDialog(
                                 name = name,
                                 date = dateMillis,
                                 isBirthday = isBirthday,
-                                icon = selectedIcon
+                                icon = selectedIcon,
+                                color = selectedColor
                             )
                         )
                     } else {
