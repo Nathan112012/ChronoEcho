@@ -67,6 +67,9 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
 
+    // Ensure Compose Foundation is included for animateItemPlacement and other APIs
+    implementation("androidx.compose.foundation:foundation")
+
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.gson)

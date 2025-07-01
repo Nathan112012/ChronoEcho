@@ -61,6 +61,11 @@ import java.util.*
 import java.util.concurrent.TimeUnit
 import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.animation.core.updateTransition
+import androidx.compose.animation.core.animateDp
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.animateColor
+import androidx.compose.animation.core.spring
 
 val Context.dataStore by preferencesDataStore(name = "events")
 val EVENTS_KEY = stringPreferencesKey("events_json")
@@ -603,12 +608,17 @@ fun EventCard(
     dragHandle: (@Composable () -> Unit)? = null,
     isDragging: Boolean = false
 ) {
-    val elevation by animateDpAsState(if (isDragging) 16.dp else 4.dp, label = "elevation_anim")
-    val scale by animateFloatAsState(if (isDragging) 1.07f else 1f, label = "scale_anim")
-    val borderColor by animateColorAsState(
-        if (isDragging) MaterialTheme.colorScheme.primary else Color.Transparent,
-        label = "border_anim"
-    )
+    val transition = updateTransition(targetState = isDragging, label = "dragTransition")
+    val elevation by transition.animateDp(label = "elevation_anim") { dragging -> if (dragging) 20.dp else 4.dp }
+    val scale by transition.animateFloat(label = "scale_anim") { dragging -> if (dragging) 1.04f else 1f }
+    val borderColor by transition.animateColor(label = "border_anim") { dragging ->
+        if (dragging) MaterialTheme.colorScheme.primary else Color.Transparent
+    }
+    val backgroundColor by transition.animateColor(label = "bg_anim") { dragging ->
+        if (dragging) MaterialTheme.colorScheme.surfaceVariant else Color(event.color)
+    }
+    val contentAlpha by transition.animateFloat(label = "content_alpha_anim") { dragging -> if (dragging) 0.85f else 1f }
+    val contentScale by transition.animateFloat(label = "content_scale_anim") { dragging -> if (dragging) 0.97f else 1f }
 
     val (ageText, closeMsg) = formatEventDetailText(event)
     val fullDate = Instant.ofEpochMilli(event.date).atZone(ZoneId.systemDefault()).toLocalDate()
@@ -623,13 +633,13 @@ fun EventCard(
         }
         .then(if (isDragging) Modifier.zIndex(2f) else Modifier.zIndex(0f))
         .let { if (onCardClick != null) it.clickable { onCardClick() } else it }
-        .border(2.dp, borderColor, shape = RoundedCornerShape(50)) // pill shape and highlight
+        .border(width = 2.dp, color = borderColor, shape = RoundedCornerShape(50))
 
     ElevatedCard(
         modifier = cardModifier,
         elevation = CardDefaults.cardElevation(defaultElevation = elevation),
-        shape = RoundedCornerShape(50), // pill shape
-        colors = CardDefaults.cardColors(containerColor = Color(event.color))
+        shape = RoundedCornerShape(50),
+        colors = CardDefaults.cardColors(containerColor = backgroundColor)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -640,59 +650,58 @@ fun EventCard(
                 imageVector = iconMap[event.icon] ?: Icons.Default.Event,
                 contentDescription = event.name,
                 modifier = Modifier.size(56.dp),
-                tint = MaterialTheme.colorScheme.primary
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = contentAlpha)
             )
             Spacer(Modifier.width(16.dp))
             // Right: Text content
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .graphicsLayer {
+                        alpha = contentAlpha
+                        scaleX = contentScale
+                        scaleY = contentScale
+                    }
+            ) {
                 Text(
                     text = event.name,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha)
                 )
-                // yyyy mm dd always shown
                 Text(
                     text = fullDate,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha)
                 )
                 Spacer(Modifier.height(4.dp))
-                // Age and closeMsg in a row, always reserving space for the bubble
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(IntrinsicSize.Min)) {
                     Text(
                         text = ageText,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha),
                         fontWeight = FontWeight.SemiBold
                     )
-                    Spacer(Modifier.width(8.dp))
-                    if (closeMsg != null) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.95f)
-                        ) {
-                            Text(
-                                text = closeMsg,
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    } else {
-                        // Invisible placeholder bubble to reserve space
-                        Box(
-                            modifier = Modifier
-                                .height(32.dp)
-                                .widthIn(min = 60.dp)
-                        ) {}
-                    }
                 }
             }
             // Drag handle on the far right if present
             dragHandle?.let {
-                Box(contentAlignment = Alignment.Center) { it() }
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .padding(start = 8.dp)
+                        .size(40.dp)
+                        .background(
+                            if (isDragging) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            shape = CircleShape
+                        )
+                        .border(
+                            width = if (isDragging) 2.dp else 1.dp,
+                            color = if (isDragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                            shape = CircleShape
+                        )
+                ) { it() }
             }
         }
     }
