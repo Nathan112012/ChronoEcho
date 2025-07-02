@@ -195,7 +195,7 @@ class EventNotificationWorker(
         }
         val notification = NotificationCompat.Builder(context, channelId)
             .setContentTitle("Event Reminder")
-            .setContentText("Don't forget: $eventName is tomorrow!")
+            .setContentText("Sup, Nathan the best her to tell you don't forget: $eventName is tomorrow!")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .build()
         notificationManager.notify(eventIdHash, notification)
