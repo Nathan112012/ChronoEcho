@@ -10,14 +10,12 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.animateColor
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -61,58 +59,44 @@ import java.time.LocalDate
 import java.time.Period
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit // ADDED: Import for date calculations
 import java.util.*
 import java.util.concurrent.TimeUnit
 
 // THEME DEFINITIONS START HERE
 
-private val DarkColorScheme = darkColorScheme(
-    primary = Color(0xFFD0BCFF),
-    secondary = Color(0xFFCCC2DC),
-    tertiary = Color(0xFFEFB8C8),
-    background = Color(0xFF1C1B1F),
-    surface = Color(0xFF1C1B1F),
-    onPrimary = Color(0xFF381E72),
-    onSecondary = Color(0xFF332D41),
-    onTertiary = Color(0xFF492532),
-    onBackground = Color(0xFFE6E1E5),
-    onSurface = Color(0xFFE6E1E5),
-    error = Color(0xFFF2B8B5),
-    onError = Color(0xFF601410),
-    errorContainer = Color(0xFF8C1D18),
-    onErrorContainer = Color(0xFFF9DEDC),
-    outline = Color(0xFF938F99)
+private val PolishedDarkColorScheme = darkColorScheme(
+    primary = Color(0xFF9FCAFF),
+    onPrimary = Color(0xFF003258),
+    primaryContainer = Color(0xFF00497D),
+    onPrimaryContainer = Color(0xFFD1E4FF),
+    secondary = Color(0xFFBBC7DB),
+    onSecondary = Color(0xFF253140),
+    secondaryContainer = Color(0xFF3B4858), // A muted blue, used for the 'edit' swipe action.
+    onSecondaryContainer = Color(0xFFD7E3F7),
+    tertiary = Color(0xFFD8BDE0),
+    onTertiary = Color(0xFF3B2947),
+    tertiaryContainer = Color(0xFF533F5F),
+    onTertiaryContainer = Color(0xFFF4D9FD),
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005),
+    errorContainer = Color(0xFF93000A),
+    onErrorContainer = Color(0xFFFFDAD6),
+    background = Color(0xFF1A1C1E), // A softer dark gray background.
+    onBackground = Color(0xFFE2E2E6),
+    surface = Color(0xFF1A1C1E), // Surfaces match the background.
+    onSurface = Color(0xFFE2E2E6),
+    surfaceVariant = Color(0xFF42474E), // Used for dialogs and other components.
+    onSurfaceVariant = Color(0xFFC2C7CF),
+    outline = Color(0xFF8C9199)
 )
 
-private val LightColorScheme = lightColorScheme(
-    primary = Color(0xFF6750A4),
-    secondary = Color(0xFF625B71),
-    tertiary = Color(0xFF7D5260),
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color(0xFFFFFFFF),
-    onSecondary = Color(0xFFFFFFFF),
-    onTertiary = Color(0xFFFFFFFF),
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    error = Color(0xFFB3261E),
-    onError = Color(0xFFFFFFFF),
-    errorContainer = Color(0xFFF9DEDC),
-    onErrorContainer = Color(0xFF410E0B),
-    outline = Color(0xFF79747E)
-)
 @Composable
 fun ChronoEchoTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
-
     MaterialTheme(
-        colorScheme = colorScheme,
+        colorScheme = PolishedDarkColorScheme,
         typography = Typography(),
         content = content
     )
@@ -143,7 +127,7 @@ data class Event(
 )
 
 val iconMap = mapOf(
-    "Cake" to Icons.Default.Cake, // Birthday
+    "Cake" to Icons.Default.Cake,
     "Event" to Icons.Default.Event,
     "Star" to Icons.Default.Star,
     "Favorite" to Icons.Default.Favorite,
@@ -168,6 +152,27 @@ val iconMap = mapOf(
 )
 val iconNames = iconMap.keys.toList()
 
+// ADDED: This is the function you were missing.
+// It calculates the number of days from today until the next anniversary of a given date.
+fun getDaysUntilNextOccurrence(eventDateMillis: Long): Long {
+    val today = LocalDate.now()
+    val originalEventDate = Instant.ofEpochMilli(eventDateMillis)
+        .atZone(ZoneId.systemDefault())
+        .toLocalDate()
+
+    // Determine the date of the next occurrence. Start by assuming it's this year.
+    var nextOccurrence = LocalDate.of(today.year, originalEventDate.month, originalEventDate.dayOfMonth)
+
+    // If that date is in the past, the next occurrence is next year.
+    if (nextOccurrence.isBefore(today)) {
+        nextOccurrence = nextOccurrence.plusYears(1)
+    }
+
+    // Calculate the number of days between today and the next occurrence.
+    return ChronoUnit.DAYS.between(today, nextOccurrence)
+}
+
+
 fun formatEventDetailText(event: Event): Pair<String, String?> {
     val now = LocalDate.now()
     val eventDate = Instant.ofEpochMilli(event.date).atZone(ZoneId.systemDefault()).toLocalDate()
@@ -182,11 +187,12 @@ fun formatEventDetailText(event: Event): Pair<String, String?> {
         append("$days ${if (days == 1) "day" else "days"}")
     }
 
-    val daysUntil = getDaysUntilNextOccurrence(event.date, System.currentTimeMillis())
+    // FIXED: Corrected the function call here.
+    val daysUntil = getDaysUntilNextOccurrence(event.date)
     val closeMsg = when (daysUntil) {
-        0 -> "Today!"
-        1 -> "Tomorrow"
-        in 2..7 -> "In $daysUntil days"
+        0L -> "Today!"
+        1L -> "Tomorrow"
+        in 2L..7L -> "In $daysUntil days"
         else -> null
     }
     return Pair(ageString, closeMsg)
@@ -228,13 +234,32 @@ suspend fun loadSortMode(context: Context): SortMode {
     }
 }
 
+// MODIFIED: The worker is now more powerful and funnier.
 class EventNotificationWorker(
     context: Context,
     params: WorkerParameters
 ) : Worker(context, params) {
     override fun doWork(): Result {
         val eventName = inputData.getString("event_name") ?: return Result.failure()
-        val eventIdHash = inputData.getString("event_id")?.hashCode() ?: eventName.hashCode()
+        val eventId = inputData.getString("event_id") ?: return Result.failure()
+        val daysOut = inputData.getInt("days_out", -1)
+
+        val prefix = "Nathan the Best here to say....\n"
+        val funnyMessage = when (daysOut) {
+            7 -> "I've peered into the future, and it looks like ${eventName}'s big day is exactly one week away! Start the party planning... or the panic."
+            6 -> "My supercomputer (it's a calculator with a fancy sticker) predicts a 100% chance of cake in 6 days for ${eventName}. Prepare your fork."
+            5 -> "Psst! Just 5 days until you have to act surprised and delighted for ${eventName}'s event. You can thank me for the heads-up later."
+            4 -> "ALERT! We're at DEFCON 4 for ${eventName}'s celebration. That means 'Definitely Find a Cool Gift Soon'. Only 4 days left!"
+            3 -> "If you listen closely, you can hear the faint sound of party poppers. That's because ${eventName}'s event is in just 3 days!"
+            2 -> "It's the final countdown! (do-do-do-dooo) Less than 48 hours until we celebrate ${eventName}! I hope you've practiced your 'Happy Birthday' singing."
+            1 -> "THIS IS NOT A DRILL! The day we've been training for is TOMORROW. Get ready to celebrate ${eventName} in style!"
+            else -> "Looks like ${eventName}'s event is coming up soon! Better get ready!"
+        }
+
+        val contentText = prefix + funnyMessage
+        // Create a unique ID for each notification to prevent them from overwriting each other
+        val notificationId = (eventId + daysOut).hashCode()
+
         val context = applicationContext
         val channelId = "event_channel"
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -242,42 +267,64 @@ class EventNotificationWorker(
             val channel = NotificationChannel(channelId, "Events", NotificationManager.IMPORTANCE_HIGH)
             notificationManager.createNotificationChannel(channel)
         }
+
         val notification = NotificationCompat.Builder(context, channelId)
-            .setContentTitle("Event Reminder")
-            .setContentText("Just a reminder: $eventName is tomorrow!")
+            .setContentTitle("Upcoming Event: $eventName")
+            .setContentText(contentText)
+            // Use BigTextStyle to make sure the full funny message is visible
+            .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
             .setSmallIcon(R.drawable.ic_launcher_foreground) // Make sure you have a valid drawable
             .build()
-        notificationManager.notify(eventIdHash, notification)
+
+        notificationManager.notify(notificationId, notification)
         return Result.success()
     }
 }
 
+// MODIFIED: This function now schedules a whole week of notifications.
 fun scheduleEventNotification(context: Context, event: Event) {
-    WorkManager.getInstance(context).cancelUniqueWork(event.id)
+    val workManager = WorkManager.getInstance(context)
+    // First, cancel all previously scheduled notifications for this event using its ID as a tag.
+    // This is important if the user edits the event date.
+    workManager.cancelAllWorkByTag(event.id)
 
-    val eventCal = Calendar.getInstance().apply { timeInMillis = event.date }
     val nowCal = Calendar.getInstance()
-
+    val eventCal = Calendar.getInstance().apply { timeInMillis = event.date }
     eventCal.set(Calendar.YEAR, nowCal.get(Calendar.YEAR))
+
+    // If the event anniversary for this year has already passed, schedule for next year.
     if (eventCal.before(nowCal)) {
         eventCal.add(Calendar.YEAR, 1)
     }
 
-    val notificationTime = eventCal.timeInMillis - TimeUnit.DAYS.toMillis(1)
-    val delay = notificationTime - System.currentTimeMillis()
+    // Loop to schedule a notification for each day of the week leading up to the event.
+    for (daysOut in 1..7) {
+        val notificationTime = eventCal.timeInMillis - TimeUnit.DAYS.toMillis(daysOut.toLong())
+        val delay = notificationTime - System.currentTimeMillis()
 
-    if (delay > 0) {
-        val work = OneTimeWorkRequestBuilder<EventNotificationWorker>()
-            .setInitialDelay(delay, TimeUnit.MILLISECONDS)
-            .setInputData(workDataOf("event_name" to event.name, "event_id" to event.id))
-            .build()
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            event.id,
-            ExistingWorkPolicy.REPLACE,
-            work
-        )
+        if (delay > 0) {
+            val inputData = workDataOf(
+                "event_name" to event.name,
+                "event_id" to event.id,
+                "days_out" to daysOut // Pass the days_out value to the worker
+            )
+
+            val workRequest = OneTimeWorkRequestBuilder<EventNotificationWorker>()
+                .setInitialDelay(delay, TimeUnit.MILLISECONDS)
+                .setInputData(inputData)
+                .addTag(event.id) // Tag the work with the event ID for easy cancellation.
+                .build()
+
+            // Enqueue each notification with a unique name to avoid conflicts.
+            workManager.enqueueUniqueWork(
+                "${event.id}_${daysOut}_days_out",
+                ExistingWorkPolicy.REPLACE,
+                workRequest
+            )
+        }
     }
 }
+
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -286,8 +333,7 @@ class MainActivity : ComponentActivity() {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
         }
         setContent {
-            // MODIFIED: Force light theme to be active for black text
-            ChronoEchoTheme(darkTheme = false) {
+            ChronoEchoTheme {
                 AppWithSplashScreen()
             }
         }
@@ -358,10 +404,12 @@ fun SplashScreen() {
 enum class SortMode { Closest, Farthest, Chronological, Custom }
 
 fun sortEvents(events: List<Event>, mode: SortMode): List<Event> {
+    // The `now` variable is no longer needed here, but we can leave it.
     val now = System.currentTimeMillis()
     return when (mode) {
-        SortMode.Closest -> events.sortedBy { getDaysUntilNextOccurrence(it.date, now) }
-        SortMode.Farthest -> events.sortedByDescending { getDaysUntilNextOccurrence(it.date, now) }
+        // FIXED: Corrected the function calls in the sorting logic.
+        SortMode.Closest -> events.sortedBy { getDaysUntilNextOccurrence(it.date) }
+        SortMode.Farthest -> events.sortedByDescending { getDaysUntilNextOccurrence(it.date) }
         SortMode.Chronological -> events.sortedBy { it.date }
         SortMode.Custom -> events
     }
@@ -417,7 +465,9 @@ fun BirthdayEventApp() {
     }
 
     LaunchedEffect(sortMode) {
-        saveSortMode(context, sortMode)
+        scope.launch {
+            saveSortMode(context, sortMode)
+        }
     }
 
     val reorderState = rememberReorderableLazyListState(
@@ -436,9 +486,13 @@ fun BirthdayEventApp() {
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text("ChronoEcho", style = MaterialTheme.typography.headlineSmall) },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = Color.Transparent
+                ),
                 actions = {
                     SortMenuButton(
                         currentMode = sortMode,
@@ -448,26 +502,21 @@ fun BirthdayEventApp() {
             )
         },
         floatingActionButton = {
-            Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.BottomCenter
+            LargeFloatingActionButton(
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    eventToEdit = null
+                    showAddEditDialog = true
+                },
+                shape = CircleShape,
+                containerColor = MaterialTheme.colorScheme.primaryContainer
             ) {
-                FloatingActionButton(
-                    onClick = {
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        eventToEdit = null
-                        showAddEditDialog = true
-                    },
-                    shape = CircleShape,
-                    containerColor = MaterialTheme.colorScheme.primary
-                ) {
-                    Icon(
-                        Icons.Default.Add,
-                        contentDescription = "Add Event",
-                        modifier = Modifier.size(32.dp),
-                        tint = MaterialTheme.colorScheme.onPrimary
-                    )
-                }
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = "Add Event",
+                    modifier = Modifier.size(36.dp),
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                )
             }
         },
         floatingActionButtonPosition = FabPosition.Center
@@ -505,7 +554,8 @@ fun BirthdayEventApp() {
                             val newEvents = events!! - event
                             events = newEvents
                             scope.launch { saveEvents(context, newEvents) }
-                            WorkManager.getInstance(context).cancelUniqueWork(event.id)
+                            // MODIFIED: Cancel all work tagged with the event's ID.
+                            WorkManager.getInstance(context).cancelAllWorkByTag(event.id)
                         }
                         showDeleteConfirmation = false
                         eventToDelete = null
@@ -535,7 +585,8 @@ fun BirthdayEventApp() {
                                 if (sortMode == SortMode.Custom) Modifier.reorderable(reorderState)
                                 else Modifier
                             ),
-                        contentPadding = PaddingValues(bottom = 80.dp)
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(displayedEvents, key = { it.id }) { event ->
                             ReorderableItem(reorderState, key = event.id) { isDragging ->
@@ -603,8 +654,7 @@ fun SortMenuButton(currentMode: SortMode, onModeSelected: (SortMode) -> Unit) {
                             contentDescription = null,
                             tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    },
-                    modifier = if (isSelected) Modifier.background(MaterialTheme.colorScheme.secondaryContainer) else Modifier
+                    }
                 )
             }
         }
@@ -618,22 +668,10 @@ fun EventCard(
     isDragging: Boolean = false
 ) {
     val transition = updateTransition(targetState = isDragging, label = "dragTransition")
-    val elevation by transition.animateDp(
-        transitionSpec = { spring(stiffness = Spring.StiffnessMedium) },
-        label = "elevation_anim"
-    ) { dragging -> if (dragging) 12.dp else 4.dp }
-
     val scale by transition.animateFloat(
         transitionSpec = { spring(stiffness = Spring.StiffnessMedium) },
         label = "scale_anim"
     ) { dragging -> if (dragging) 1.02f else 1f }
-
-    val backgroundColor by transition.animateColor(
-        transitionSpec = { spring(stiffness = Spring.StiffnessMedium) },
-        label = "bg_anim"
-    ) { dragging ->
-        if (dragging) MaterialTheme.colorScheme.surfaceVariant else Color(event.color)
-    }
 
     val (ageText, _) = formatEventDetailText(event)
     val fullDate = Instant.ofEpochMilli(event.date).atZone(ZoneId.systemDefault()).toLocalDate()
@@ -641,18 +679,17 @@ fun EventCard(
 
     val cardModifier = modifier
         .fillMaxWidth()
-        .padding(horizontal = 16.dp, vertical = 6.dp)
         .graphicsLayer {
             scaleX = scale
             scaleY = scale
         }
         .zIndex(if (isDragging) 1f else 0f)
 
-    ElevatedCard(
+    Card(
         modifier = cardModifier,
-        elevation = CardDefaults.cardElevation(defaultElevation = elevation),
-        shape = RoundedCornerShape(percent = 50),
-        colors = CardDefaults.cardColors(containerColor = backgroundColor)
+        shape = RoundedCornerShape(percent = 50), // This creates the pill shape.
+        colors = CardDefaults.cardColors(containerColor = Color(event.color)),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isDragging) 8.dp else 2.dp)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -662,34 +699,34 @@ fun EventCard(
                 imageVector = iconMap[event.icon] ?: Icons.Default.Event,
                 contentDescription = event.name,
                 modifier = Modifier.size(56.dp),
-                tint = MaterialTheme.colorScheme.primary
+                // The icon on the card should be dark to contrast with the light pastel color.
+                tint = Color.Black.copy(alpha = 0.7f)
             )
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
+                // Text inside the card must be dark for readability on pastel backgrounds.
                 Text(
                     text = event.name,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = Color.Black.copy(alpha = 0.87f)
                 )
                 Text(
                     text = fullDate,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = Color.Black.copy(alpha = 0.7f)
                 )
                 Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(IntrinsicSize.Min)) {
-                    Text(
-                        text = ageText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
+                Text(
+                    text = ageText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Black.copy(alpha = 0.7f)
+                )
             }
         }
     }
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -712,86 +749,87 @@ fun AddEditEventDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (initialEvent == null) "Add New Event" else "Edit Event") },
         text = {
-            LazyColumn {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 item {
-                    Column {
-                        OutlinedTextField(
-                            value = name,
-                            onValueChange = { name = it },
-                            label = { Text("Event Name") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        OutlinedButton(
-                            onClick = { showDatePicker = true },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()).format(Date(dateMillis)))
-                        }
-                        Spacer(Modifier.height(16.dp))
-                        Text("Icon", style = MaterialTheme.typography.labelLarge)
-                        Spacer(Modifier.height(8.dp))
-                        val columns = 5
-                        val rows = (iconNames.size + columns - 1) / columns
-                        Column {
-                            for (row in 0 until rows) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceAround
-                                ) {
-                                    for (col in 0 until columns) {
-                                        val idx = row * columns + col
-                                        if (idx < iconNames.size) {
-                                            val iconName = iconNames[idx]
-                                            val isSelected = selectedIcon == iconName
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(48.dp)
-                                                    .clip(CircleShape)
-                                                    .background(
-                                                        if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                                                    )
-                                                    .clickable { selectedIcon = iconName },
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = iconMap[iconName]!!,
-                                                    contentDescription = iconName,
-                                                    modifier = Modifier.size(32.dp),
-                                                    tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Event Name") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+                item {
+                    OutlinedButton(
+                        onClick = { showDatePicker = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()).format(Date(dateMillis)))
+                    }
+                }
+                item {
+                    Text("Icon", style = MaterialTheme.typography.labelLarge)
+                    Spacer(Modifier.height(8.dp))
+                    val columns = 5
+                    val rows = (iconNames.size + columns - 1) / columns
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (row in 0 until rows) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                for (col in 0 until columns) {
+                                    val idx = row * columns + col
+                                    if (idx < iconNames.size) {
+                                        val iconName = iconNames[idx]
+                                        val isSelected = selectedIcon == iconName
+                                        IconButton(
+                                            onClick = { selectedIcon = iconName },
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
                                                 )
-                                            }
-                                        } else {
-                                            Spacer(Modifier.size(48.dp))
+                                        ) {
+                                            Icon(
+                                                imageVector = iconMap[iconName]!!,
+                                                contentDescription = iconName,
+                                                tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
                                         }
+                                    } else {
+                                        Spacer(Modifier.size(48.dp)) // Placeholder for empty spots in the grid
                                     }
                                 }
-                                Spacer(Modifier.height(8.dp))
                             }
                         }
-                        Spacer(Modifier.height(16.dp))
-                        Text("Color", style = MaterialTheme.typography.labelLarge)
-                        Spacer(Modifier.height(8.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
-                            eventColorOptions.forEach { colorOption ->
-                                val isSelected = selectedColor == colorOption.toArgb().toLong()
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(colorOption.toArgb()))
-                                        .border(
-                                            width = if (isSelected) 3.dp else 1.dp,
-                                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                                            shape = CircleShape
-                                        )
-                                        .clickable { selectedColor = colorOption.toArgb().toLong() },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (isSelected) {
-                                        Icon(Icons.Default.Check, contentDescription = "Selected", tint = MaterialTheme.colorScheme.primary)
-                                    }
+                    }
+                }
+                item {
+                    Text("Color", style = MaterialTheme.typography.labelLarge)
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+                    ) {
+                        eventColorOptions.forEach { colorOption ->
+                            val isSelected = selectedColor == colorOption.toArgb().toLong()
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(colorOption)
+                                    .border(
+                                        width = 3.dp,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                        shape = CircleShape
+                                    )
+                                    .clickable { selectedColor = colorOption.toArgb().toLong() },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isSelected) {
+                                    Icon(Icons.Default.Check, contentDescription = "Selected", tint = Color.Black.copy(alpha = 0.6f))
                                 }
                             }
                         }
@@ -840,23 +878,6 @@ fun AddEditEventDialog(
     }
 }
 
-fun getDaysUntilNextOccurrence(eventDate: Long, now: Long): Int {
-    val eventCal = Calendar.getInstance().apply { timeInMillis = eventDate }
-    val nowCal = Calendar.getInstance().apply { timeInMillis = now }
-    nowCal.set(Calendar.HOUR_OF_DAY, 0)
-    nowCal.set(Calendar.MINUTE, 0)
-    nowCal.set(Calendar.SECOND, 0)
-    nowCal.set(Calendar.MILLISECOND, 0)
-
-    eventCal.set(Calendar.YEAR, nowCal.get(Calendar.YEAR))
-    if (eventCal.timeInMillis < nowCal.timeInMillis) {
-        eventCal.add(Calendar.YEAR, 1)
-    }
-
-    val diffMillis = eventCal.timeInMillis - nowCal.timeInMillis
-    return TimeUnit.MILLISECONDS.toDays(diffMillis).toInt()
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SwipeableEventCard(
@@ -895,7 +916,7 @@ fun SwipeableEventCard(
             val color by animateColorAsState(
                 targetValue = when (direction) {
                     SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.errorContainer
-                    SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.tertiaryContainer
+                    SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.secondaryContainer
                     else -> Color.Transparent
                 }, label = "swipeBackgroundColor"
             )
@@ -911,17 +932,16 @@ fun SwipeableEventCard(
             }
             val iconColor = when (direction) {
                 SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.onErrorContainer
-                SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.onTertiaryContainer
+                SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.onSecondaryContainer
                 else -> Color.Transparent
             }
 
             Box(
                 Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 6.dp)
-                    .clip(RoundedCornerShape(percent = 50))
+                    .clip(RoundedCornerShape(percent = 50)) // MODIFIED: Match the card's pill shape.
                     .background(color)
-                    .padding(horizontal = 20.dp),
+                    .padding(horizontal = 24.dp),
                 contentAlignment = alignment
             ) {
                 icon?.let {
@@ -964,7 +984,7 @@ fun DeletionConfirmationDialog(
                     containerColor = MaterialTheme.colorScheme.error
                 )
             ) {
-                Text("Delete")
+                Text("Delete", color = MaterialTheme.colorScheme.onError)
             }
         },
         dismissButton = {
