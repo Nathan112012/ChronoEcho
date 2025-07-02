@@ -588,7 +588,7 @@ fun EventCard(
     ElevatedCard(
         modifier = cardModifier,
         elevation = CardDefaults.cardElevation(defaultElevation = elevation),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(percent = 50),
         colors = CardDefaults.cardColors(containerColor = backgroundColor)
     ) {
         Row(
@@ -861,7 +861,7 @@ fun SwipeableEventCard(
                 Modifier
                     .fillMaxSize()
                     .padding(horizontal = 16.dp, vertical = 6.dp)
-                    .clip(RoundedCornerShape(20.dp))
+                    .clip(RoundedCornerShape(percent = 50))
                     .background(color)
                     .padding(horizontal = 20.dp),
                 contentAlignment = alignment
