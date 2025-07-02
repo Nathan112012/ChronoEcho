@@ -10,6 +10,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.animateColor
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -30,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -46,9 +48,8 @@ import com.google.gson.reflect.TypeToken
 import com.silentninja.chronoecho.ui.theme.BirthdayEventTheme
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import org.burnoutcrew.reorderable.ReorderableItem
-import org.burnoutcrew.reorderable.detectReorder
+import org.burnoutcrew.reorderable.detectReorderAfterLongPress
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
 import org.burnoutcrew.reorderable.reorderable
 import java.text.SimpleDateFormat
@@ -60,12 +61,6 @@ import java.time.format.DateTimeFormatter
 import java.util.*
 import java.util.concurrent.TimeUnit
 import androidx.compose.foundation.border
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.animation.core.updateTransition
-import androidx.compose.animation.core.animateDp
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.animateColor
-import androidx.compose.animation.core.spring
 
 val Context.dataStore by preferencesDataStore(name = "events")
 val EVENTS_KEY = stringPreferencesKey("events_json")
@@ -345,13 +340,9 @@ fun BirthdayEventApp() {
     val scope = rememberCoroutineScope()
 
     var events by remember { mutableStateOf<List<Event>?>(null) }
-
     var showAddEditDialog by remember { mutableStateOf(false) }
     var eventToEdit by remember { mutableStateOf<Event?>(null) }
-    val snackbarHostState = remember { SnackbarHostState() }
-    var recentlyDeletedEvent by remember { mutableStateOf<Pair<Event, Int>?>(null) }
     var sortMode by remember { mutableStateOf(SortMode.Custom) }
-
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var eventToDelete by remember { mutableStateOf<Event?>(null) }
 
@@ -374,14 +365,8 @@ fun BirthdayEventApp() {
         }
     )
 
-    val filteredEvents = remember(events, sortMode) {
+    val displayedEvents = remember(events, sortMode) {
         events?.let { sortEvents(it, sortMode) } ?: emptyList()
-    }
-
-    val eventsList = events
-    val displayedEvents = when (sortMode) {
-        SortMode.Custom -> eventsList ?: emptyList()
-        else -> filteredEvents
     }
 
     Scaffold(
@@ -418,27 +403,7 @@ fun BirthdayEventApp() {
                 }
             }
         },
-        floatingActionButtonPosition = FabPosition.Center,
-        snackbarHost = {
-            SnackbarHost(snackbarHostState) { data ->
-                Snackbar(
-                    modifier = Modifier.padding(16.dp),
-                    action = {
-                        TextButton(
-                            onClick = { data.performAction() }
-                        ) {
-                            Text(
-                                "UNDO",
-                                color = MaterialTheme.colorScheme.primary,
-                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
-                            )
-                        }
-                    }
-                ) {
-                    Text(data.visuals.message)
-                }
-            }
-        }
+        floatingActionButtonPosition = FabPosition.Center
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -450,16 +415,15 @@ fun BirthdayEventApp() {
                     initialEvent = eventToEdit,
                     onDismiss = { showAddEditDialog = false },
                     onSave = { eventToSave ->
-                        if (eventsList != null) {
-                            val newEvents = if (eventsList.any { it.id == eventToSave.id }) {
-                                eventsList.map { if (it.id == eventToSave.id) eventToSave else it }
-                            } else {
-                                eventsList + eventToSave
-                            }
-                            events = newEvents
-                            scope.launch { saveEvents(context, newEvents) }
-                            scheduleEventNotification(context, eventToSave)
+                        val currentEvents = events ?: emptyList()
+                        val newEvents = if (currentEvents.any { it.id == eventToSave.id }) {
+                            currentEvents.map { if (it.id == eventToSave.id) eventToSave else it }
+                        } else {
+                            currentEvents + eventToSave
                         }
+                        events = newEvents
+                        scope.launch { saveEvents(context, newEvents) }
+                        scheduleEventNotification(context, eventToSave)
                         showAddEditDialog = false
                     },
                     onDelete = {
@@ -474,35 +438,12 @@ fun BirthdayEventApp() {
                 DeletionConfirmationDialog(
                     eventName = eventToDelete?.name ?: "this event",
                     onConfirm = {
-                        if (eventsList != null && eventToDelete != null) {
-                            val event = eventToDelete!!
-                            val eventIndex = eventsList.indexOf(event)
-                            recentlyDeletedEvent = Pair(event, eventIndex)
-
-                            val newEvents = eventsList - event
+                        val event = eventToDelete
+                        if (event != null && events != null) {
+                            val newEvents = events!! - event
                             events = newEvents
                             scope.launch { saveEvents(context, newEvents) }
                             WorkManager.getInstance(context).cancelUniqueWork(event.id)
-
-                            scope.launch {
-                                val result = withTimeoutOrNull(5000L) {
-                                    snackbarHostState.showSnackbar(
-                                        message = "Event deleted", actionLabel = "Undo", duration = SnackbarDuration.Indefinite
-                                    )
-                                }
-                                if (result == SnackbarResult.ActionPerformed) {
-                                    recentlyDeletedEvent?.let { (deletedEvent, index) ->
-                                        val eventsNow = events
-                                        if (eventsNow != null) {
-                                            val restoredEvents = eventsNow.toMutableList().apply { add(index, deletedEvent) }
-                                            events = restoredEvents
-                                            scope.launch { saveEvents(context, restoredEvents) }
-                                            scheduleEventNotification(context, deletedEvent)
-                                            recentlyDeletedEvent = null
-                                        }
-                                    }
-                                }
-                            }
                         }
                         showDeleteConfirmation = false
                         eventToDelete = null
@@ -515,12 +456,12 @@ fun BirthdayEventApp() {
             }
 
             when {
-                eventsList == null -> {
+                events == null -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
                 }
-                eventsList.isEmpty() -> {
+                displayedEvents.isEmpty() -> {
                     EmptyState()
                 }
                 else -> {
@@ -536,7 +477,13 @@ fun BirthdayEventApp() {
                     ) {
                         items(displayedEvents, key = { it.id }) { event ->
                             ReorderableItem(reorderState, key = event.id) { isDragging ->
+                                val reorderModifier = if (sortMode == SortMode.Custom) {
+                                    Modifier.detectReorderAfterLongPress(reorderState)
+                                } else {
+                                    Modifier
+                                }
                                 SwipeableEventCard(
+                                    modifier = reorderModifier,
                                     event = event,
                                     isDragging = isDragging,
                                     onEdit = {
@@ -546,16 +493,6 @@ fun BirthdayEventApp() {
                                     onDeleteRequest = {
                                         eventToDelete = event
                                         showDeleteConfirmation = true
-                                    },
-                                    dragHandle = {
-                                        if (sortMode == SortMode.Custom) {
-                                            Icon(
-                                                Icons.Default.DragHandle,
-                                                contentDescription = "Drag to reorder",
-                                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                                modifier = Modifier.detectReorder(reorderState)
-                                            )
-                                        }
                                     }
                                 )
                             }
@@ -614,23 +551,27 @@ fun SortMenuButton(currentMode: SortMode, onModeSelected: (SortMode) -> Unit) {
 fun EventCard(
     event: Event,
     modifier: Modifier = Modifier,
-    onCardClick: (() -> Unit)? = null,
-    dragHandle: (@Composable () -> Unit)? = null,
     isDragging: Boolean = false
 ) {
     val transition = updateTransition(targetState = isDragging, label = "dragTransition")
-    val elevation by transition.animateDp(label = "elevation_anim") { dragging -> if (dragging) 20.dp else 4.dp }
-    val scale by transition.animateFloat(label = "scale_anim") { dragging -> if (dragging) 1.04f else 1f }
-    val borderColor by transition.animateColor(label = "border_anim") { dragging ->
-        if (dragging) MaterialTheme.colorScheme.primary else Color.Transparent
-    }
-    val backgroundColor by transition.animateColor(label = "bg_anim") { dragging ->
+    val elevation by transition.animateDp(
+        transitionSpec = { spring(stiffness = Spring.StiffnessMedium) },
+        label = "elevation_anim"
+    ) { dragging -> if (dragging) 12.dp else 4.dp }
+
+    val scale by transition.animateFloat(
+        transitionSpec = { spring(stiffness = Spring.StiffnessMedium) },
+        label = "scale_anim"
+    ) { dragging -> if (dragging) 1.02f else 1f }
+
+    val backgroundColor by transition.animateColor(
+        transitionSpec = { spring(stiffness = Spring.StiffnessMedium) },
+        label = "bg_anim"
+    ) { dragging ->
         if (dragging) MaterialTheme.colorScheme.surfaceVariant else Color(event.color)
     }
-    val contentAlpha by transition.animateFloat(label = "content_alpha_anim") { dragging -> if (dragging) 0.85f else 1f }
-    val contentScale by transition.animateFloat(label = "content_scale_anim") { dragging -> if (dragging) 0.97f else 1f }
 
-    val (ageText, closeMsg) = formatEventDetailText(event)
+    val (ageText, _) = formatEventDetailText(event)
     val fullDate = Instant.ofEpochMilli(event.date).atZone(ZoneId.systemDefault()).toLocalDate()
         .format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault()))
 
@@ -641,77 +582,47 @@ fun EventCard(
             scaleX = scale
             scaleY = scale
         }
-        .then(if (isDragging) Modifier.zIndex(2f) else Modifier.zIndex(0f))
-        .let { if (onCardClick != null) it.clickable { onCardClick() } else it }
-        .border(width = 2.dp, color = borderColor, shape = RoundedCornerShape(50))
+        .zIndex(if (isDragging) 1f else 0f)
+
 
     ElevatedCard(
         modifier = cardModifier,
         elevation = CardDefaults.cardElevation(defaultElevation = elevation),
-        shape = RoundedCornerShape(50),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = backgroundColor)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Left: Icon
             Icon(
                 imageVector = iconMap[event.icon] ?: Icons.Default.Event,
                 contentDescription = event.name,
                 modifier = Modifier.size(56.dp),
-                tint = MaterialTheme.colorScheme.primary.copy(alpha = contentAlpha)
+                tint = MaterialTheme.colorScheme.primary
             )
             Spacer(Modifier.width(16.dp))
-            // Right: Text content
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .graphicsLayer {
-                        alpha = contentAlpha
-                        scaleX = contentScale
-                        scaleY = contentScale
-                    }
-            ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = event.name,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha)
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                     text = fullDate,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(IntrinsicSize.Min)) {
                     Text(
                         text = ageText,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
-            }
-            // Drag handle on the far right if present
-            dragHandle?.let {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .padding(start = 8.dp)
-                        .size(40.dp)
-                        .background(
-                            if (isDragging) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            shape = CircleShape
-                        )
-                        .border(
-                            width = if (isDragging) 2.dp else 1.dp,
-                            color = if (isDragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                            shape = CircleShape
-                        )
-                ) { it() }
             }
         }
     }
@@ -874,38 +785,6 @@ fun AddEditEventDialog(
     }
 }
 
-@Composable
-fun IconPicker(
-    selectedIcon: String,
-    onIconSelected: (String) -> Unit
-) {
-    Column {
-        Text("Icon", style = MaterialTheme.typography.labelLarge)
-        Spacer(Modifier.height(8.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
-            iconNames.forEach { iconName ->
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (iconName == selectedIcon) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                        )
-                        .clickable { onIconSelected(iconName) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = iconMap[iconName]!!,
-                        contentDescription = iconName,
-                        modifier = Modifier.size(36.dp),
-                        tint = if (iconName == selectedIcon) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-    }
-}
-
 fun getDaysUntilNextOccurrence(eventDate: Long, now: Long): Int {
     val eventCal = Calendar.getInstance().apply { timeInMillis = eventDate }
     val nowCal = Calendar.getInstance().apply { timeInMillis = now }
@@ -930,7 +809,7 @@ fun SwipeableEventCard(
     onEdit: () -> Unit,
     onDeleteRequest: () -> Unit,
     isDragging: Boolean = false,
-    dragHandle: (@Composable () -> Unit)? = null
+    modifier: Modifier = Modifier
 ) {
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { dismissValue ->
@@ -999,8 +878,8 @@ fun SwipeableEventCard(
         }
     ) {
         EventCard(
+            modifier = modifier,
             event = event,
-            dragHandle = dragHandle,
             isDragging = isDragging
         )
     }
