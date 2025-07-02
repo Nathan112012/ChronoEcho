@@ -15,7 +15,9 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -32,7 +34,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -45,7 +49,6 @@ import androidx.datastore.preferences.preferencesDataStore
 import androidx.work.*
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import com.silentninja.chronoecho.ui.theme.BirthdayEventTheme
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.burnoutcrew.reorderable.ReorderableItem
@@ -60,14 +63,68 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.*
 import java.util.concurrent.TimeUnit
-import androidx.compose.foundation.border
+
+// THEME DEFINITIONS START HERE
+
+private val DarkColorScheme = darkColorScheme(
+    primary = Color(0xFFD0BCFF),
+    secondary = Color(0xFFCCC2DC),
+    tertiary = Color(0xFFEFB8C8),
+    background = Color(0xFF1C1B1F),
+    surface = Color(0xFF1C1B1F),
+    onPrimary = Color(0xFF381E72),
+    onSecondary = Color(0xFF332D41),
+    onTertiary = Color(0xFF492532),
+    onBackground = Color(0xFFE6E1E5),
+    onSurface = Color(0xFFE6E1E5),
+    error = Color(0xFFF2B8B5),
+    onError = Color(0xFF601410),
+    errorContainer = Color(0xFF8C1D18),
+    onErrorContainer = Color(0xFFF9DEDC),
+    outline = Color(0xFF938F99)
+)
+
+private val LightColorScheme = lightColorScheme(
+    primary = Color(0xFF6750A4),
+    secondary = Color(0xFF625B71),
+    tertiary = Color(0xFF7D5260),
+    background = Color(0xFFFFFBFE),
+    surface = Color(0xFFFFFBFE),
+    onPrimary = Color(0xFFFFFFFF),
+    onSecondary = Color(0xFFFFFFFF),
+    onTertiary = Color(0xFFFFFFFF),
+    onBackground = Color(0xFF1C1B1F),
+    onSurface = Color(0xFF1C1B1F),
+    error = Color(0xFFB3261E),
+    onError = Color(0xFFFFFFFF),
+    errorContainer = Color(0xFFF9DEDC),
+    onErrorContainer = Color(0xFF410E0B),
+    outline = Color(0xFF79747E)
+)
+@Composable
+fun ChronoEchoTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    content: @Composable () -> Unit
+) {
+    val colorScheme = when {
+        darkTheme -> DarkColorScheme
+        else -> LightColorScheme
+    }
+
+    MaterialTheme(
+        colorScheme = colorScheme,
+        typography = Typography(),
+        content = content
+    )
+}
+
+// THEME DEFINITIONS END HERE
 
 val Context.dataStore by preferencesDataStore(name = "events")
 val EVENTS_KEY = stringPreferencesKey("events_json")
 val SORT_MODE_KEY = stringPreferencesKey("sort_mode")
 val gson = Gson()
 
-// Add color palette for events
 val eventColorOptions = listOf(
     Color(0xFFFFF59D), // Yellow
     Color(0xFFB2FF59), // Green
@@ -83,9 +140,7 @@ data class Event(
     val date: Long,
     val icon: String,
     val color: Long
-) {
-    val isBirthday: Boolean get() = icon == "Cake"
-}
+)
 
 val iconMap = mapOf(
     "Cake" to Icons.Default.Cake, // Birthday
@@ -127,7 +182,6 @@ fun formatEventDetailText(event: Event): Pair<String, String?> {
         append("$days ${if (days == 1) "day" else "days"}")
     }
 
-    // Determine if the event is close (today, tomorrow, or within 7 days)
     val daysUntil = getDaysUntilNextOccurrence(event.date, System.currentTimeMillis())
     val closeMsg = when (daysUntil) {
         0 -> "Today!"
@@ -190,8 +244,8 @@ class EventNotificationWorker(
         }
         val notification = NotificationCompat.Builder(context, channelId)
             .setContentTitle("Event Reminder")
-            .setContentText("Sup, Nathan the best her to tell you don't forget: $eventName is tomorrow!")
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentText("Just a reminder: $eventName is tomorrow!")
+            .setSmallIcon(R.drawable.ic_launcher_foreground) // Make sure you have a valid drawable
             .build()
         notificationManager.notify(eventIdHash, notification)
         return Result.success()
@@ -200,13 +254,22 @@ class EventNotificationWorker(
 
 fun scheduleEventNotification(context: Context, event: Event) {
     WorkManager.getInstance(context).cancelUniqueWork(event.id)
-    val oneDayBefore = event.date - TimeUnit.DAYS.toMillis(1)
-    val delay = oneDayBefore - System.currentTimeMillis()
+
+    val eventCal = Calendar.getInstance().apply { timeInMillis = event.date }
+    val nowCal = Calendar.getInstance()
+
+    eventCal.set(Calendar.YEAR, nowCal.get(Calendar.YEAR))
+    if (eventCal.before(nowCal)) {
+        eventCal.add(Calendar.YEAR, 1)
+    }
+
+    val notificationTime = eventCal.timeInMillis - TimeUnit.DAYS.toMillis(1)
+    val delay = notificationTime - System.currentTimeMillis()
+
     if (delay > 0) {
         val work = OneTimeWorkRequestBuilder<EventNotificationWorker>()
             .setInitialDelay(delay, TimeUnit.MILLISECONDS)
             .setInputData(workDataOf("event_name" to event.name, "event_id" to event.id))
-            .addTag("event_notification_${event.id}")
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             event.id,
@@ -223,7 +286,8 @@ class MainActivity : ComponentActivity() {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
         }
         setContent {
-            BirthdayEventTheme {
+            // MODIFIED: Force light theme to be active for black text
+            ChronoEchoTheme(darkTheme = false) {
                 AppWithSplashScreen()
             }
         }
@@ -269,7 +333,7 @@ fun SplashScreen() {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
-                    Icons.Default.Cake, // Using a standard icon
+                    Icons.Default.Cake,
                     contentDescription = "App Icon",
                     modifier = Modifier.size(80.dp),
                     tint = color
@@ -291,14 +355,14 @@ fun SplashScreen() {
     }
 }
 
-enum class SortMode { Closest, Farthest, Most_Recent, Custom }
+enum class SortMode { Closest, Farthest, Chronological, Custom }
 
 fun sortEvents(events: List<Event>, mode: SortMode): List<Event> {
     val now = System.currentTimeMillis()
     return when (mode) {
         SortMode.Closest -> events.sortedBy { getDaysUntilNextOccurrence(it.date, now) }
         SortMode.Farthest -> events.sortedByDescending { getDaysUntilNextOccurrence(it.date, now) }
-        SortMode.Most_Recent -> events.sortedByDescending { it.date }
+        SortMode.Chronological -> events.sortedBy { it.date }
         SortMode.Custom -> events
     }
 }
@@ -338,6 +402,7 @@ fun EmptyState() {
 fun BirthdayEventApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
 
     var events by remember { mutableStateOf<List<Event>?>(null) }
     var showAddEditDialog by remember { mutableStateOf(false) }
@@ -357,6 +422,7 @@ fun BirthdayEventApp() {
 
     val reorderState = rememberReorderableLazyListState(
         onMove = { from, to ->
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             if (sortMode == SortMode.Custom && events != null) {
                 val reorderedEvents = events!!.toMutableList().apply { add(to.index, removeAt(from.index)) }
                 events = reorderedEvents
@@ -388,6 +454,7 @@ fun BirthdayEventApp() {
             ) {
                 FloatingActionButton(
                     onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         eventToEdit = null
                         showAddEditDialog = true
                     },
@@ -425,11 +492,6 @@ fun BirthdayEventApp() {
                         scope.launch { saveEvents(context, newEvents) }
                         scheduleEventNotification(context, eventToSave)
                         showAddEditDialog = false
-                    },
-                    onDelete = {
-                        showAddEditDialog = false
-                        showDeleteConfirmation = true
-                        eventToDelete = eventToEdit
                     }
                 )
             }
@@ -507,6 +569,7 @@ fun BirthdayEventApp() {
 @Composable
 fun SortMenuButton(currentMode: SortMode, onModeSelected: (SortMode) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
+    val haptics = LocalHapticFeedback.current
     Box {
         IconButton(onClick = { expanded = true }) {
             Icon(Icons.Default.Sort, contentDescription = "Sort")
@@ -525,6 +588,7 @@ fun SortMenuButton(currentMode: SortMode, onModeSelected: (SortMode) -> Unit) {
                         )
                     },
                     onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         onModeSelected(mode)
                         expanded = false
                     },
@@ -533,7 +597,7 @@ fun SortMenuButton(currentMode: SortMode, onModeSelected: (SortMode) -> Unit) {
                             when (mode) {
                                 SortMode.Closest -> Icons.Default.ArrowUpward
                                 SortMode.Farthest -> Icons.Default.ArrowDownward
-                                SortMode.Most_Recent -> Icons.Default.Update
+                                SortMode.Chronological -> Icons.Default.FormatListNumbered
                                 SortMode.Custom -> Icons.Default.DragHandle
                             },
                             contentDescription = null,
@@ -584,7 +648,6 @@ fun EventCard(
         }
         .zIndex(if (isDragging) 1f else 0f)
 
-
     ElevatedCard(
         modifier = cardModifier,
         elevation = CardDefaults.cardElevation(defaultElevation = elevation),
@@ -633,8 +696,7 @@ fun EventCard(
 fun AddEditEventDialog(
     initialEvent: Event?,
     onDismiss: () -> Unit,
-    onSave: (Event) -> Unit,
-    onDelete: (() -> Unit)?
+    onSave: (Event) -> Unit
 ) {
     var name by remember { mutableStateOf(initialEvent?.name ?: "") }
     var dateMillis by remember { mutableStateOf(initialEvent?.date ?: System.currentTimeMillis()) }
@@ -642,6 +704,7 @@ fun AddEditEventDialog(
     var selectedIcon by remember { mutableStateOf(initialEvent?.icon ?: iconNames.first()) }
     var selectedColor by remember { mutableStateOf(initialEvent?.color ?: eventColorOptions.first().toArgb().toLong()) }
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
 
     val datePickerState = rememberDatePickerState(initialSelectedDateMillis = dateMillis)
 
@@ -667,7 +730,6 @@ fun AddEditEventDialog(
                             Text(SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()).format(Date(dateMillis)))
                         }
                         Spacer(Modifier.height(16.dp))
-                        // Icon grid picker
                         Text("Icon", style = MaterialTheme.typography.labelLarge)
                         Spacer(Modifier.height(8.dp))
                         val columns = 5
@@ -709,7 +771,6 @@ fun AddEditEventDialog(
                             }
                         }
                         Spacer(Modifier.height(16.dp))
-                        // Color palette picker
                         Text("Color", style = MaterialTheme.typography.labelLarge)
                         Spacer(Modifier.height(8.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
@@ -722,7 +783,7 @@ fun AddEditEventDialog(
                                         .background(Color(colorOption.toArgb()))
                                         .border(
                                             width = if (isSelected) 3.dp else 1.dp,
-                                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray,
+                                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
                                             shape = CircleShape
                                         )
                                         .clickable { selectedColor = colorOption.toArgb().toLong() },
@@ -741,6 +802,7 @@ fun AddEditEventDialog(
         confirmButton = {
             Button(
                 onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     if (name.isNotBlank()) {
                         onSave(
                             Event(
@@ -758,14 +820,7 @@ fun AddEditEventDialog(
             ) { Text("Save") }
         },
         dismissButton = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (initialEvent != null && onDelete != null) {
-                    TextButton(onClick = onDelete) {
-                        Text("Delete", color = MaterialTheme.colorScheme.error)
-                    }
-                }
-                TextButton(onClick = onDismiss) { Text("Cancel") }
-            }
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
 
@@ -811,14 +866,17 @@ fun SwipeableEventCard(
     isDragging: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val haptics = LocalHapticFeedback.current
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { dismissValue ->
             when (dismissValue) {
                 SwipeToDismissBoxValue.StartToEnd -> {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     onEdit()
                     false
                 }
                 SwipeToDismissBoxValue.EndToStart -> {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     onDeleteRequest()
                     false
                 }
@@ -891,13 +949,17 @@ fun DeletionConfirmationDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val haptics = LocalHapticFeedback.current
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Confirm Deletion") },
         text = { Text("Are you sure you want to permanently delete \"$eventName\"?") },
         confirmButton = {
             Button(
-                onClick = onConfirm,
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onConfirm()
+                },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.error
                 )
