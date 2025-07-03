@@ -1,4 +1,26 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <style name="Theme.MyApplication" parent="android:Theme.Material.Light.NoActionBar" />
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!--
+      Base application theme. This is the theme your app will use AFTER the splash screen.
+    -->
+    <style name="Theme.ChronoEcho" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!--
+      Splash Screen Theme.
+    -->
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <!-- Set the splash screen's background color. -->
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+
+        <!--
+          THIS IS THE FIX:
+          Point to the new drawable wrapper we created instead of the raw launcher icon.
+        -->
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+
+        <!-- Set the background of the icon to match the screen's background. -->
+        <item name="windowSplashScreenIconBackgroundColor">@color/splash_background</item>
+
+        <!-- Set the theme to be used after the splash screen is dismissed. -->
+        <item name="postSplashScreenTheme">@style/Theme.ChronoEcho</item>
+    </style>
 </resources>
