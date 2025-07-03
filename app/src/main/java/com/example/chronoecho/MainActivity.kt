@@ -82,9 +82,9 @@ private val PolishedDarkColorScheme = darkColorScheme(
     onError = Color(0xFF690005),
     errorContainer = Color(0xFF93000A),
     onErrorContainer = Color(0xFFFFDAD6),
-    background = Color(0xFF1A1C1E), // A softer dark gray background.
+    background = Color(0xFF26264D), // A softer dark gray background.
     onBackground = Color(0xFFE2E2E6),
-    surface = Color(0xFF1A1C1E), // Surfaces match the background.
+    surface = Color(0xFF1A1414), // Surfaces match the background.
     onSurface = Color(0xFFE2E2E6),
     surfaceVariant = Color(0xFF42474E), // Used for dialogs and other components.
     onSurfaceVariant = Color(0xFFC2C7CF),
@@ -334,72 +334,12 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             ChronoEchoTheme {
-                AppWithSplashScreen()
+                BirthdayEventApp()
             }
         }
     }
 }
 
-@Composable
-fun AppWithSplashScreen() {
-    var showSplash by remember { mutableStateOf(true) }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(1800)
-        showSplash = false
-    }
-    if (showSplash) {
-        SplashScreen()
-    } else {
-        BirthdayEventApp()
-    }
-}
-
-@Composable
-fun SplashScreen() {
-    val infiniteTransition = rememberInfiniteTransition(label = "splashTransition")
-    val progress by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ), label = "splashProgress"
-    )
-
-    val color = lerp(
-        MaterialTheme.colorScheme.primary,
-        MaterialTheme.colorScheme.secondary,
-        progress
-    )
-
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
-    ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    Icons.Default.Cake,
-                    contentDescription = "App Icon",
-                    modifier = Modifier.size(80.dp),
-                    tint = color
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    "ChronoEcho",
-                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                    color = color
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Loading...",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
-                )
-            }
-        }
-    }
-}
 
 enum class SortMode { Closest, Farthest, Chronological, Custom }
 
