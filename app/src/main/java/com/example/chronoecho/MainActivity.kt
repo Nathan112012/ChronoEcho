@@ -235,7 +235,7 @@ suspend fun loadSortMode(context: Context): SortMode {
     }
 }
 
-// MODIFIED: The worker is now more powerful and funnier.
+// MODIFIED: The worker now correctly includes the "Nathan the Best" prefix on ALL notifications.
 class EventNotificationWorker(
     context: Context,
     params: WorkerParameters
@@ -246,18 +246,29 @@ class EventNotificationWorker(
         val daysOut = inputData.getInt("days_out", -1)
 
         val prefix = "Nathan the Best here to say....\n"
-        val funnyMessage = when (daysOut) {
-            7 -> "I've peered into the future, and it looks like ${eventName}'s big day is exactly one week away! Start the party planning... or the panic."
-            6 -> "My supercomputer (it's a calculator with a fancy sticker) predicts a 100% chance of cake in 6 days for ${eventName}. Prepare your fork."
-            5 -> "Psst! Just 5 days until you have to act surprised and delighted for ${eventName}'s event. You can thank me for the heads-up later."
-            4 -> "ALERT! We're at DEFCON 4 for ${eventName}'s celebration. That means 'Definitely Find a Cool Gift Soon'. Only 4 days left!"
-            3 -> "If you listen closely, you can hear the faint sound of party poppers. That's because ${eventName}'s event is in just 3 days!"
-            2 -> "It's the final countdown! (do-do-do-dooo) Less than 48 hours until we celebrate ${eventName}! I hope you've practiced your 'Happy Birthday' singing."
-            1 -> "THIS IS NOT A DRILL! The day we've been training for is TOMORROW. Get ready to celebrate ${eventName} in style!"
-            else -> "Looks like ${eventName}'s event is coming up soon! Better get ready!"
+        val title: String
+        val mainMessage: String
+
+        if (daysOut == 0) {
+            title = "🎉 Happy Birthday, ${eventName}! 🎉"
+            mainMessage = "The big day is finally here! Hope it's a fantastic one filled with cake, presents, and joy. Let the celebrations begin!"
+        } else {
+            title = "Upcoming Event: $eventName"
+            mainMessage = when (daysOut) {
+                7 -> "I've peered into the future, and it looks like ${eventName}'s big day is exactly one week away! Start the party planning... or the panic."
+                6 -> "My supercomputer (it's a calculator with a fancy sticker) predicts a 100% chance of cake in 6 days for ${eventName}. Prepare your fork."
+                5 -> "Psst! Just 5 days until you have to act surprised and delighted for ${eventName}'s event. You can thank me for the heads-up later."
+                4 -> "ALERT! We're at DEFCON 4 for ${eventName}'s celebration. That means 'Definitely Find a Cool Gift Soon'. Only 4 days left!"
+                3 -> "If you listen closely, you can hear the faint sound of party poppers. That's because ${eventName}'s event is in just 3 days!"
+                2 -> "It's the final countdown! (do-do-do-dooo) Less than 48 hours until we celebrate ${eventName}! I hope you've practiced your 'Happy Birthday' singing."
+                1 -> "THIS IS NOT A DRILL! The day we've been training for is TOMORROW. Get ready to celebrate ${eventName} in style!"
+                else -> "Looks like ${eventName}'s event is coming up soon! Better get ready!"
+            }
         }
 
-        val contentText = prefix + funnyMessage
+        // THIS IS THE FIX: The prefix is now added to the main message, regardless of which one it is.
+        val contentText = if (daysOut == 0) mainMessage else prefix + mainMessage
+
         // Create a unique ID for each notification to prevent them from overwriting each other
         val notificationId = (eventId + daysOut).hashCode()
 
@@ -270,7 +281,7 @@ class EventNotificationWorker(
         }
 
         val notification = NotificationCompat.Builder(context, channelId)
-            .setContentTitle("Upcoming Event: $eventName")
+            .setContentTitle(title) // Use the dynamic title
             .setContentText(contentText)
             // Use BigTextStyle to make sure the full funny message is visible
             .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
@@ -281,7 +292,6 @@ class EventNotificationWorker(
         return Result.success()
     }
 }
-
 // MODIFIED: This function now schedules a whole week of notifications.
 fun scheduleEventNotification(context: Context, event: Event) {
     val workManager = WorkManager.getInstance(context)
